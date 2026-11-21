@@ -89,7 +89,7 @@
     border-radius: 10px; padding: 12px; -webkit-user-select: text; user-select: text;
   }
   .sheet .body { padding: 4px 18px 0; }
-  .poses { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin-top: 14px; }
+  .poses { display: grid; grid-template-columns: repeat(auto-fill, minmax(72px, 1fr)); gap: 8px; margin-top: 14px; }
   .pose { flex-direction: column; height: auto; padding: 6px 2px 8px; gap: 2px; background: #c8743a; border: 3px solid transparent; }
   .pose canvas { width: 100%; max-width: 72px; height: auto; }
   .pose span { font-size: 12px; font-weight: 700; color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,.5); }
@@ -142,7 +142,7 @@
     <div class="group">
       <button id="view" title="Campo intero / metà campo"></button>
       <button id="zones" title="Numeri delle zone">Zone</button>
-      <button id="reset" title="Rimetti la formazione iniziale"><svg viewBox="0 0 24 24"><path d="M4 12a8 8 0 1 0 2.5-5.8"/><path d="M4 4v5h5"/></svg></button>
+      <button id="reset" title="Svuota la lavagna (omini e disegni)"><svg viewBox="0 0 24 24"><path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5"/><path d="M10 13l5 5M15 13l-5 5"/></svg>Svuota</button>
     </div>
     <div class="sep"></div>
     <div class="group">
@@ -224,17 +224,11 @@ function rotPos(team, rot, i) {
   return team === 'A' ? p.slice() : mirror(p);
 }
 
-function defaultBoard() {
-  const tokens = [];
-  for (const team of ['A', 'B']) {
-    for (let i = 1; i <= 6; i++) {
-      const [x, y] = rotPos(team, 1, i);
-      tokens.push({ id: team + i, team, label: String(i), x, y });
-    }
-  }
-  tokens.push({ id: 'ball', team: 'ball', label: '', x: -0.45, y: 8.4 });
-  return { tokens, strokes: [] };
-}
+// la lavagna parte sempre vuota
+function defaultBoard() { return { tokens: [], strokes: [] }; }
+// la lavagna in corso sopravvive solo a un ricaricamento della pagina, non a una nuova apertura
+function ssGet(k) { try { return JSON.parse(sessionStorage.getItem(k)); } catch (e) { return null; } }
+function ssSet(k, v) { try { sessionStorage.setItem(k, JSON.stringify(v)); } catch (e) { } }
 
 function snapshot() { return JSON.stringify(board); }
 function commit() {
@@ -242,10 +236,10 @@ function commit() {
   history.push(snapshot());
   if (history.length > 120) history.shift();
   hIndex = history.length - 1;
-  lsSet(LS_BOARD, board);
+  ssSet(LS_BOARD, board);
   updateButtons();
 }
-function restore(json) { board = JSON.parse(json); lsSet(LS_BOARD, board); updateButtons(); draw(); }
+function restore(json) { board = JSON.parse(json); ssSet(LS_BOARD, board); updateButtons(); draw(); }
 
 // ---------- Canvas e trasformazioni ----------
 const cv = document.getElementById('cv');
@@ -374,6 +368,7 @@ function drawStroke(s) {
     ctx.setLineDash([]);
     arrowHead(a, b, c, d, head, s.color);
   } else {
+    if (s.dash) ctx.setLineDash([w * 2.4, w * 2.2]);
     ctx.beginPath();
     ctx.moveTo(pts[0][0], pts[0][1]);
     if (pts.length === 1) ctx.lineTo(pts[0][0] + 0.1, pts[0][1]);
@@ -383,6 +378,7 @@ function drawStroke(s) {
     }
     if (pts.length > 1) ctx.lineTo(pts[pts.length - 1][0], pts[pts.length - 1][1]);
     ctx.stroke();
+    ctx.setLineDash([]);
     if (s.tool === 'curve' && pts.length > 2) {
       // direzione della punta: un punto un po' indietro lungo il tratto
       const end = pts[pts.length - 1];
@@ -417,14 +413,18 @@ function drawBall(x, y, r) {
   ctx.restore();
 }
 
-// ---------- Giocatori (sagoma realistica in posa) ----------
-// coordinate in unita' (altezza ~100), piedi in (0,0), y verso l'alto negativo, guarda a destra
+// ---------- Giocatori: sagome con proporzioni reali ----------
+// Unita': altezza ~100. Piedi a terra y=0, y negativa verso l'alto, il giocatore guarda a destra (+x).
+// Ogni posa indica bacino, inclinazione del busto e dove stanno caviglie e mani:
+// gomiti e ginocchia si calcolano da soli con lunghezze reali degli arti.
+const LEN = { thigh: 25, shin: 24, upper: 17, fore: 15, torso: 30 };
 const POSES = {
-  ready:  { name: 'Ricezione', lift: 0,  head: [11, -77], neck: [7, -69], sh: [4, -64], hip: [-6, -40], eN: [15, -49], hN: [27, -40], eF: [12, -50], hF: [25, -41], kN: [9, -23], aN: [3, -3], kF: [0, -22], aF: [-11, -3] },
-  set:    { name: 'Palleggio', lift: 0,  head: [3, -85], neck: [1, -76], sh: [0, -71], hip: [-2, -44], eN: [13, -77], hN: [15, -96], eF: [10, -78], hF: [12, -97], kN: [5, -23], aN: [3, -2], kF: [-3, -23], aF: [-8, -2] },
-  attack: { name: 'Attacco',   lift: 16, head: [4, -86], neck: [1, -77], sh: [-1, -72], hip: [-5, -46], eN: [-9, -89], hN: [-3, -106], eF: [13, -72], hF: [22, -82], kN: [5, -30], aN: [-6, -14], kF: [-9, -32], aF: [-17, -18] },
-  block:  { name: 'Muro',      lift: 10, head: [1, -86], neck: [0, -77], sh: [0, -72], hip: [-1, -46], eN: [5, -90], hN: [9, -107], eF: [3, -91], hF: [7, -108], kN: [3, -24], aN: [1, -2], kF: [-3, -24], aF: [-5, -2] },
-  serve:  { name: 'Battuta',   lift: 0,  head: [2, -85], neck: [0, -76], sh: [-1, -71], hip: [-2, -45], eN: [-11, -82], hN: [-8, -99], eF: [10, -77], hF: [17, -91], kN: [5, -24], aN: [8, -2], kF: [-6, -23], aF: [-11, -2] }
+  ready:  { name: 'Ricezione', lift: 0,  hip: [-6, -37], lean: 38, head: 22, aN: [11, -3], aF: [-12, -3], hN: [35, -42], hF: [34, -43], eN: 1, eF: 1 },
+  dig:    { name: 'Difesa',    lift: 0,  hip: [-12, -24], lean: 52, head: 35, aN: [16, -3], aF: [-20, -3], hN: [33, -21], hF: [32, -22], eN: 1, eF: 1 },
+  set:    { name: 'Palleggio', lift: 0,  hip: [-1, -48], lean: 4, head: 2, aN: [9, -3], aF: [-7, -3], hN: [13, -104], hF: [10, -105], eN: 1, eF: 1 },
+  attack: { name: 'Attacco',   lift: 20, hip: [-3, -50], lean: -9, head: -4, aN: [-12, -14], aF: [-20, -21], hN: [-2, -110], hF: [21, -93], eN: -1, eF: -1 },
+  block:  { name: 'Muro',      lift: 12, hip: [0, -50], lean: 3, head: 0, aN: [3, -3], aF: [-3, -3], hN: [9, -112], hF: [5, -112], eN: -1, eF: -1 },
+  serve:  { name: 'Battuta',   lift: 0,  hip: [-2, -49], lean: 4, head: 4, aN: [11, -3], aF: [-11, -3], hN: [-6, -106], hF: [17, -101], eN: -1, eF: 1 }
 };
 const POSE_KEYS = Object.keys(POSES);
 
@@ -434,78 +434,124 @@ function shade(hex, f) {
   if (f < 0) { r *= 1 + f; g *= 1 + f; b *= 1 + f; } else { r += (255 - r) * f; g += (255 - g) * f; b += (255 - b) * f; }
   return `rgb(${r | 0},${g | 0},${b | 0})`;
 }
-function seg(c, a, b, w, col, butt) { c.lineCap = butt ? 'butt' : 'round'; c.strokeStyle = col; c.lineWidth = w; c.beginPath(); c.moveTo(a[0], a[1]); c.lineTo(b[0], b[1]); c.stroke(); }
-function lerp(a, b, t) { return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]; }
+const lerp = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+// cinematica inversa a due segmenti
+function ik(A, C, l1, l2, s) {
+  let dx = C[0] - A[0], dy = C[1] - A[1], d = Math.hypot(dx, dy);
+  const max = l1 + l2 - 0.01;
+  if (d > max) { dx *= max / d; dy *= max / d; d = max; }
+  const base = Math.atan2(dy, dx);
+  const a = Math.acos(Math.max(-1, Math.min(1, (l1 * l1 + d * d - l2 * l2) / (2 * l1 * d))));
+  const J = [A[0] + l1 * Math.cos(base + s * a), A[1] + l1 * Math.sin(base + s * a)];
+  return [J, [A[0] + dx, A[1] + dy]];
+}
+// capsula rastremata (raggio ra in a, rb in b)
+function cap(p, a, ra, b, rb) {
+  const dx = b[0] - a[0], dy = b[1] - a[1], d = Math.hypot(dx, dy);
+  if (d < 0.01) { p.moveTo(a[0] + ra, a[1]); p.arc(a[0], a[1], ra, 0, Math.PI * 2); return; }
+  const ang = Math.atan2(dy, dx), phi = Math.acos(Math.max(-1, Math.min(1, (ra - rb) / d)));
+  p.moveTo(a[0] + ra * Math.cos(ang + phi), a[1] + ra * Math.sin(ang + phi));
+  p.arc(a[0], a[1], ra, ang + phi, ang + 2 * Math.PI - phi);
+  p.arc(b[0], b[1], rb, ang - phi, ang + phi);
+  p.closePath();
+}
+
+function buildBody(P) {
+  const hip = P.hip, L = (P.lean * Math.PI) / 180;
+  const up = [Math.sin(L), -Math.cos(L)], side = [-up[1], up[0]]; // side = verso la pancia
+  const sh = [hip[0] + up[0] * LEN.torso, hip[1] + up[1] * LEN.torso];
+  const H = ((P.lean - P.head) * Math.PI) / 180; // la testa resta piu' dritta del busto
+  const hu = [Math.sin(H), -Math.cos(H)];
+  const neck = [sh[0] + up[0] * 2.5, sh[1] + up[1] * 2.5];
+  const head = [neck[0] + hu[0] * 8.5 + 1.2, neck[1] + hu[1] * 8.5];
+
+  const legs = {}, arms = {};
+  for (const k of ['N', 'F']) {
+    const hp = k === 'N' ? [hip[0] + side[0] * 0.8, hip[1]] : [hip[0] - side[0] * 0.8, hip[1]];
+    const [knee, ank] = ik(hp, P['a' + k], LEN.thigh, LEN.shin, -1);
+    legs[k] = { hip: hp, knee, ank };
+    const s0 = k === 'N' ? sh : [sh[0] - side[0] * 1.5, sh[1] - side[1] * 1.5];
+    const [elb, wr] = ik(s0, P['h' + k], LEN.upper, LEN.fore, P['e' + k]);
+    arms[k] = { sh: s0, elb, wr };
+  }
+  return { hip, sh, up, side, neck, head, H, legs, arms };
+}
+
+function bodyPaths(B) {
+  const far = new Path2D(), near = new Path2D(), shortsN = new Path2D(), shortsF = new Path2D(), shoes = new Path2D(), torso = new Path2D();
+  function leg(p, sp, l) {
+    cap(p, l.hip, 6.3, l.knee, 4.2);
+    const calf = lerp(l.knee, l.ank, 0.33);
+    cap(p, l.knee, 4.2, calf, 4.4);
+    cap(p, calf, 4.4, l.ank, 2.3);
+    cap(sp, l.hip, 7.2, lerp(l.hip, l.knee, 0.42), 5.9);
+    const toe = [l.ank[0] + 8.5, l.ank[1] + 1.6];
+    cap(shoes, [l.ank[0] - 1.2, l.ank[1] + 1.0], 2.2, toe, 1.5);
+  }
+  function arm(p, a) {
+    cap(p, a.sh, 4.6, a.elb, 3.3);
+    const fa = lerp(a.elb, a.wr, 0.3);
+    cap(p, a.elb, 3.3, fa, 3.6);
+    cap(p, fa, 3.6, a.wr, 2.2);
+    const dir = [(a.wr[0] - a.elb[0]) / LEN.fore, (a.wr[1] - a.elb[1]) / LEN.fore];
+    cap(p, a.wr, 2.3, [a.wr[0] + dir[0] * 4.6, a.wr[1] + dir[1] * 4.6], 1.9);
+  }
+  leg(far, shortsF, B.legs.F);
+  arm(far, B.arms.F);
+  // busto: spalle larghe, vita stretta
+  const u = B.up, s = B.side, at = (t, w) => [B.hip[0] + u[0] * LEN.torso * t + s[0] * w, B.hip[1] + u[1] * LEN.torso * t + s[1] * w];
+  const pts = [at(1.02, -6.5), at(0.98, 7), at(0.75, 8.8), at(0.45, 6.6), at(0.12, 7), at(-0.05, 6.4), at(-0.05, -7.4), at(0.12, -7.6), at(0.45, -6.4), at(0.8, -7.5)];
+  torso.moveTo((pts[0][0] + pts[1][0]) / 2, (pts[0][1] + pts[1][1]) / 2);
+  for (let i = 1; i <= pts.length; i++) {
+    const p1 = pts[i % pts.length], p2 = pts[(i + 1) % pts.length];
+    torso.quadraticCurveTo(p1[0], p1[1], (p1[0] + p2[0]) / 2, (p1[1] + p2[1]) / 2);
+  }
+  torso.closePath();
+  cap(near, B.neck, 3.3, lerp(B.neck, B.head, 0.55), 3.0);
+  near.moveTo(B.head[0] + 6.4, B.head[1]);
+  near.ellipse(B.head[0], B.head[1], 6.1, 7.3, -(B.H) * 0.6, 0, Math.PI * 2);
+  leg(near, shortsN, B.legs.N);
+  const nearArm = new Path2D(); arm(nearArm, B.arms.N);
+  return { far, near, nearArm, torso, shortsN, shortsF, shoes };
+}
 
 // disegna un giocatore con i piedi in (x,y), alto h pixel
 function drawPlayer(c, x, y, h, o) {
   const P = POSES[o.pose] || POSES.ready;
   const k = h / 100, dir = o.mirror ? -1 : 1;
-  const skin = '#e6b089', skinD = '#c48a62', hair = '#3a2719';
-  const jersey = o.color, jerseyD = shade(o.color, -0.32), jerseyL = shade(o.color, 0.18);
-  const shorts = '#1d2027', shortsD = '#111317', pad = '#2b2e35', sock = '#f2f2f2', shoe = '#fafafa';
+  const B = buildBody(P), D = bodyPaths(B);
+  const main = o.color, dark = shade(o.color, -0.3), shorts = shade(o.color, -0.62), shortsD = shade(o.color, -0.72);
   c.save();
   c.translate(x, y);
-  // ombra a terra
-  c.fillStyle = 'rgba(0,0,0,' + (P.lift ? .22 : .32) + ')';
-  c.beginPath(); c.ellipse(0, 0, 20 * k, 5 * k, 0, 0, Math.PI * 2); c.fill();
+  c.fillStyle = 'rgba(0,0,0,' + (P.lift ? .2 : .3) + ')';
+  c.beginPath(); c.ellipse(0, 0, 19 * k, 4.5 * k, 0, 0, Math.PI * 2); c.fill();
   c.translate(0, -P.lift * k);
   c.scale(dir * k, k);
-  c.lineCap = 'round'; c.lineJoin = 'round';
-
-  function leg(hip, kn, an, far) {
-    const s = far ? skinD : skin;
-    seg(c, hip, kn, 11, s);
-    seg(c, hip, lerp(hip, kn, 0.55), 12.5, far ? shortsD : shorts, true);
-    seg(c, kn, an, 8, s);
-    seg(c, lerp(kn, an, 0.7), an, 8.4, far ? '#d6d6d6' : sock, true);
-    seg(c, lerp(kn, an, -0.12), lerp(kn, an, 0.2), 9.6, far ? '#1b1d22' : pad, true);
-    const toe = [an[0] + 9, an[1] + 0.5];
-    seg(c, [an[0] - 2, an[1]], toe, 6.5, far ? '#d9d9d9' : shoe);
-    seg(c, [an[0] - 3, an[1] + 3], [toe[0] + 1, toe[1] + 3], 1.6, '#555');
-  }
-  function arm(sh, el, ha, far) {
-    const s = far ? skinD : skin;
-    seg(c, sh, el, 7, s);
-    seg(c, el, ha, 6, s);
-    seg(c, sh, lerp(sh, el, 0.38), 9, far ? jerseyD : jersey, true);
-    c.fillStyle = s; c.beginPath(); c.arc(ha[0], ha[1], 3.6, 0, Math.PI * 2); c.fill();
-  }
-  const sp = [P.sh[0] - P.hip[0], P.sh[1] - P.hip[1]], L = Math.hypot(sp[0], sp[1]);
-  const nx = -sp[1] / L, ny = sp[0] / L; // perpendicolare alla schiena
-  const shF = [P.sh[0] - nx * 2, P.sh[1] - ny * 2], hipF = [P.hip[0] - nx * 1.5, P.hip[1] - ny * 1.5];
-
-  leg(hipF, P.kF, P.aF, true);
-  arm(shF, P.eF, P.hF, true);
-  // pantaloncini
-  c.fillStyle = shorts; c.beginPath(); c.arc(P.hip[0], P.hip[1] + 1, 9.5, 0, Math.PI * 2); c.fill();
-  // maglia
-  const T = new Path2D();
-  T.moveTo(P.sh[0] + nx * 9, P.sh[1] + ny * 9);
-  T.lineTo(P.sh[0] - nx * 8, P.sh[1] - ny * 8);
-  T.lineTo(P.hip[0] - nx * 9, P.hip[1] - ny * 9 + 2);
-  T.lineTo(P.hip[0] + nx * 9.5, P.hip[1] + ny * 9.5 + 2);
-  T.closePath();
-  const g = c.createLinearGradient(P.hip[0] - 10, 0, P.hip[0] + 12, 0);
-  g.addColorStop(0, jerseyD); g.addColorStop(0.55, jersey); g.addColorStop(1, jerseyL);
-  c.fillStyle = g; c.strokeStyle = g; c.lineWidth = 5; c.fill(T); c.stroke(T);
-  leg(P.hip, P.kN, P.aN, false);
-  // collo e testa
-  seg(c, P.neck, lerp(P.neck, P.head, 0.6), 6.5, skinD);
-  c.fillStyle = hair; c.beginPath(); c.arc(P.head[0] - 1.6, P.head[1] - 1.3, 8.6, 0, Math.PI * 2); c.fill();
-  c.fillStyle = skin; c.beginPath(); c.arc(P.head[0] + 1.2, P.head[1] + 0.9, 7.4, 0, Math.PI * 2); c.fill();
-  c.fillStyle = skinD; c.beginPath(); c.arc(P.head[0] - 1.5, P.head[1] + 1.5, 1.9, 0, Math.PI * 2); c.fill();
-  arm(P.sh, P.eN, P.hN, false);
+  c.lineJoin = 'round';
+  // contorno bianco unico attorno a tutta la sagoma
+  c.strokeStyle = 'rgba(255,255,255,.95)'; c.lineWidth = 2.6;
+  for (const p of [D.far, D.near, D.nearArm, D.torso, D.shoes]) c.stroke(p);
+  c.fillStyle = dark; c.fill(D.far);
+  c.fillStyle = shortsD; c.fill(D.shortsF);
+  c.fillStyle = '#d8d8d8'; c.fill(D.shoes);
+  c.fillStyle = main; c.fill(D.near);
+  c.fillStyle = shorts; c.fill(D.shortsN);
+  const g = c.createLinearGradient(B.hip[0] - B.side[0] * 9, B.hip[1] - B.side[1] * 9, B.hip[0] + B.side[0] * 9, B.hip[1] + B.side[1] * 9);
+  g.addColorStop(0, shade(o.color, -0.18)); g.addColorStop(0.6, main); g.addColorStop(1, shade(o.color, 0.14));
+  c.fillStyle = g; c.fill(D.torso);
+  c.fillStyle = '#f4f4f4'; c.fill(D.shoes);
+  c.fillStyle = main; c.fill(D.nearArm);
   c.restore();
 
-  // numero sulla maglia (mai specchiato)
+  // numero sulla schiena/maglia (mai specchiato)
   const label = (o.label || '').slice(0, 12);
-  const cx = x + dir * ((P.sh[0] + P.hip[0]) / 2 + nx * 1) * k, cy = y + (((P.sh[1] + P.hip[1]) / 2) - P.lift) * k;
+  const tc = [B.hip[0] + B.up[0] * LEN.torso * 0.55, B.hip[1] + B.up[1] * LEN.torso * 0.55];
+  const cx = x + dir * tc[0] * k, cy = y + (tc[1] - P.lift) * k;
   c.save();
   c.textAlign = 'center'; c.textBaseline = 'middle'; c.lineJoin = 'round';
   if (label.length && label.length <= 2) {
-    c.font = `900 ${Math.round(19 * k)}px -apple-system, system-ui, sans-serif`;
-    c.lineWidth = Math.max(2, 2.6 * k); c.strokeStyle = o.textStroke || 'rgba(0,0,0,.55)';
+    c.font = `900 ${Math.round(15 * k)}px -apple-system, system-ui, sans-serif`;
+    c.lineWidth = Math.max(2, 2.4 * k); c.strokeStyle = o.textStroke || 'rgba(0,0,0,.5)';
     c.strokeText(label, cx, cy); c.fillStyle = o.text || '#fff'; c.fillText(label, cx, cy);
   } else if (label.length) {
     const fs = Math.max(11, Math.round(10 * k));
@@ -565,6 +611,11 @@ function draw() {
   const drags = [...active.values()].filter(a => a.kind === 'drag' && a.moved);
   if (drags.length) drawTrash(drags.some(a => a.overTrash));
   for (const t of lifted) drawToken(t, true);
+  // cerchio della gomma
+  for (const a of active.values()) if (a.kind === 'erase') {
+    ctx.save(); ctx.strokeStyle = 'rgba(255,255,255,.9)'; ctx.fillStyle = 'rgba(255,255,255,.18)'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(a.last[0], a.last[1], ERASER_PX, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); ctx.restore();
+  }
 }
 let raf = 0;
 function requestDraw() { if (!raf) raf = requestAnimationFrame(() => { raf = 0; draw(); }); }
@@ -581,8 +632,8 @@ function hitToken(sx, sy, slack) {
     const [x, y] = toScreen(t.x, t.y);
     if (t.team === 'ball') { if (Math.hypot(sx - x, sy - y) <= ballR() + slack) return t; continue; }
     const h = figH(), P = POSES[t.pose] || POSES.ready;
-    const feet = y + 0.45 * h, top = feet - (1.08 + P.lift / 100) * h;
-    if (Math.abs(sx - x) <= 0.27 * h + slack && sy >= top - slack && sy <= feet + 0.06 * h + slack) return t;
+    const feet = y + 0.45 * h, top = feet - (1.12 + P.lift / 100) * h;
+    if (Math.abs(sx - x) <= 0.3 * h + slack && sy >= top - slack && sy <= feet + 0.06 * h + slack) return t;
   }
   return null;
 }
@@ -597,17 +648,51 @@ function distSeg(px, py, ax, ay, bx, by) {
   t = Math.max(0, Math.min(1, t));
   return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
 }
+// Gomma: cancella solo la parte di tratto che tocca, il resto rimane (diviso in pezzi)
+const ERASER_PX = 14;
+function densify(pts, step) {
+  const out = [pts[0]];
+  for (let i = 1; i < pts.length; i++) {
+    const a = pts[i - 1], b = pts[i], d = Math.hypot(b[0] - a[0], b[1] - a[1]), n = Math.ceil(d / step);
+    for (let j = 1; j <= n; j++) out.push([a[0] + (b[0] - a[0]) * j / n, a[1] + (b[1] - a[1]) * j / n]);
+  }
+  return out;
+}
 function eraseAt(sx, sy) {
-  const before = board.strokes.length;
-  board.strokes = board.strokes.filter(s => {
-    const pts = (s.tool === 'arrow' || s.tool === 'dash') ? [s.pts[0], s.pts[s.pts.length - 1]] : s.pts;
-    const sp = pts.map(p => toScreen(p[0], p[1]));
-    const tol = 14 + (s.w * S) * (s.tool === 'hl' ? 1.6 : 0.5);
-    if (sp.length === 1) return Math.hypot(sx - sp[0][0], sy - sp[0][1]) > tol;
-    for (let i = 0; i < sp.length - 1; i++) if (distSeg(sx, sy, sp[i][0], sp[i][1], sp[i + 1][0], sp[i + 1][1]) < tol) return false;
-    return true;
-  });
-  return board.strokes.length !== before;
+  const [wx, wy] = toWorld(sx, sy);
+  let changed = false;
+  const result = [];
+  for (const s of board.strokes) {
+    const straight = s.tool === 'arrow' || s.tool === 'dash';
+    const half = s.w * (s.tool === 'hl' ? 1.6 : 0.5);
+    const R = ERASER_PX / S + half;
+    const base = straight ? [s.pts[0], s.pts[s.pts.length - 1]] : s.pts;
+    // controllo veloce: se nessun segmento e' vicino, il tratto resta com'e'
+    let near = base.length === 1 ? Math.hypot(wx - base[0][0], wy - base[0][1]) < R : false;
+    for (let i = 0; !near && i < base.length - 1; i++) if (distSeg(wx, wy, base[i][0], base[i][1], base[i + 1][0], base[i + 1][1]) < R) near = true;
+    if (!near) { result.push(s); continue; }
+    changed = true;
+    if (base.length === 1) continue;
+    const pts = densify(base, Math.max(R / 3, 0.02));
+    const hasHead = straight || s.tool === 'curve';
+    const dash = s.dash || s.tool === 'dash';
+    let run = [];
+    const flush = (isEnd) => {
+      if (run.length >= 2) {
+        const tool = s.tool === 'hl' ? 'hl' : (hasHead && isEnd ? 'curve' : 'pen');
+        const piece = { tool, color: s.color, w: s.w, pts: run.map(p => [+p[0].toFixed(3), +p[1].toFixed(3)]) };
+        if (dash) piece.dash = true;
+        result.push(piece);
+      }
+      run = [];
+    };
+    pts.forEach((p, i) => {
+      if (Math.hypot(p[0] - wx, p[1] - wy) < R) flush(false);
+      else { run.push(p); if (i === pts.length - 1) flush(true); }
+    });
+  }
+  if (changed) board.strokes = result;
+  return changed;
 }
 
 cv.addEventListener('pointerdown', e => {
@@ -626,7 +711,7 @@ cv.addEventListener('pointerdown', e => {
   }
   if (tool === 'move') return;
   if (tool === 'erase') {
-    active.set(e.pointerId, { kind: 'erase', changed: eraseAt(sx, sy) });
+    active.set(e.pointerId, { kind: 'erase', changed: eraseAt(sx, sy), last: [sx, sy] });
     requestDraw();
     return;
   }
@@ -659,7 +744,13 @@ cv.addEventListener('pointermove', e => {
     }
     if ((a.stroke.tool === 'arrow' || a.stroke.tool === 'dash') && pts.length > 2) pts.splice(1, pts.length - 2);
   } else if (a.kind === 'erase') {
-    for (const ev of (events.length ? events : [e])) { const [px, py] = evPos(ev); if (eraseAt(px, py)) a.changed = true; }
+    for (const ev of (events.length ? events : [e])) {
+      const [px, py] = evPos(ev);
+      // passi piccoli, cosi' anche un movimento veloce cancella tutta la scia
+      const d = Math.hypot(px - a.last[0], py - a.last[1]), n = Math.max(1, Math.ceil(d / (ERASER_PX * 0.6)));
+      for (let j = 1; j <= n; j++) if (eraseAt(a.last[0] + (px - a.last[0]) * j / n, a.last[1] + (py - a.last[1]) * j / n)) a.changed = true;
+      a.last = [px, py];
+    }
   }
   requestDraw();
 });
@@ -853,7 +944,8 @@ document.getElementById('undo').onclick = () => { if (hIndex > 0) restore(histor
 document.getElementById('redo').onclick = () => { if (hIndex < history.length - 1) restore(history[++hIndex]); };
 document.getElementById('clearDraw').onclick = () => { if (!board.strokes.length) return; board.strokes = []; commit(); draw(); toast('Disegni cancellati (puoi annullare)'); };
 document.getElementById('reset').onclick = () => {
-  board.tokens = defaultBoard().tokens; commit(); draw(); toast('Formazione iniziale (puoi annullare)');
+  if (!board.tokens.length && !board.strokes.length) return;
+  board = defaultBoard(); commit(); draw(); toast('Lavagna svuotata (puoi annullare)');
 };
 document.getElementById('view').onclick = () => { prefs.view = prefs.view === 'full' ? 'half' : 'full'; savePrefs(); updateButtons(); layout(); };
 document.getElementById('zones').onclick = () => { prefs.zones = !prefs.zones; savePrefs(); updateButtons(); draw(); };
@@ -881,7 +973,8 @@ function toast(msg) {
 
 // ---------- Avvio ----------
 prefs = Object.assign(prefs, lsGet(LS_PREFS) || {});
-const saved = lsGet(LS_BOARD);
+try { localStorage.removeItem(LS_BOARD); } catch (e) { } // vecchie versioni la salvavano per sempre
+const saved = ssGet(LS_BOARD);
 board = saved && Array.isArray(saved.tokens) ? saved : defaultBoard();
 for (const t of board.tokens) { // riporta dentro chi era rimasto fuori dal campo visibile
   t.x = Math.max(VIEWS.full.x0 + 0.3, Math.min(VIEWS.full.x1 - 0.3, t.x));
