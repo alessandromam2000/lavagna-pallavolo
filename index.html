@@ -145,7 +145,6 @@
     <div class="group">
       <button id="view" title="Campo intero / metà campo"></button>
       <button id="style" title="Giocatori visti dall'alto o di lato"></button>
-      <button id="zones" title="Numeri delle zone">Zone</button>
       <button id="reset" title="Svuota la lavagna (omini e disegni)"><svg viewBox="0 0 24 24"><path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5"/><path d="M10 13l5 5M15 13l-5 5"/></svg>Svuota</button>
     </div>
     <div class="sep"></div>
@@ -317,18 +316,7 @@ function drawCourt() {
   if (prefs.view === 'full') { lineW(12, 0, 12, ext0); lineW(12, 9, 12, ext1); }
   ctx.setLineDash([]);
 
-  // numeri delle zone
-  if (prefs.zones) {
-    ctx.fillStyle = 'rgba(255,255,255,.28)';
-    ctx.font = `700 ${Math.round(0.8 * S)}px -apple-system, system-ui, sans-serif`;
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    // nell'angolo di ogni zona, cosi' non finiscono sotto gli omini
-    const zcA = { 1: [4.6, 8.2], 2: [8.3, 8.4], 3: [8.3, 5.4], 4: [8.3, 2.4], 5: [4.6, 2.2], 6: [4.6, 5.2] };
-    for (const z in zcA) {
-      let [x, y] = zcA[z];
-      ctx.fillText(z, ...toScreen(x, y));
-      if (prefs.view === 'full') ctx.fillText(z, ...toScreen(...mirror([x, y])));
-    }
+  if (false) {
   }
 
   // rete e pali
@@ -731,6 +719,9 @@ function draw() {
   const drags = [...active.values()].filter(a => a.kind === 'drag' && a.moved);
   if (drags.length) drawTrash(drags.some(a => a.overTrash));
   for (const t of lifted) drawToken(t, true);
+  // manopola di rotazione sul giocatore selezionato
+  const sel = selectedToken();
+  if (sel && !drags.some(a => a.token === sel)) drawKnob(sel);
   // cerchio della gomma
   for (const a of active.values()) if (a.kind === 'erase') {
     ctx.save(); ctx.strokeStyle = 'rgba(255,255,255,.9)'; ctx.fillStyle = 'rgba(255,255,255,.18)'; ctx.lineWidth = 1.5;
@@ -743,6 +734,50 @@ function requestDraw() { if (!raf) raf = requestAnimationFrame(() => { raf = 0; 
 // ---------- Interazione ----------
 const active = new Map(); // pointerId -> azione
 let lastTap = { id: null, time: 0 };
+
+// ---------- Rotazione con la manopola ----------
+// Tocchi o sposti un giocatore: compare una manopola. La trascini e il giocatore si gira verso il dito.
+let selectedId = null;
+const KNOB_R = 17;
+function selectedToken() {
+  const t = selectedId && board.tokens.find(t => t.id === selectedId);
+  return t && t.team !== 'ball' && visibleTokens().includes(t) ? t : null;
+}
+function knobPos(t) {
+  const [x, y] = toScreen(t.x, t.y);
+  if (prefs.style === 'top') {
+    const a = topAngle(t) * Math.PI / 180, R = figW() * 0.8 + KNOB_R;
+    return [x + Math.cos(a) * R, y + Math.sin(a) * R, x, y, R];
+  }
+  const a = ((t.rot || 0) - 90) * Math.PI / 180, R = figH() * 0.72 + KNOB_R;
+  return [x + Math.cos(a) * R, y + Math.sin(a) * R, x, y, R];
+}
+function rotFromFinger(t, sx, sy) {
+  const [, , x, y] = knobPos(t);
+  const d = Math.atan2(sy - y, sx - x) * 180 / Math.PI;
+  let r = prefs.style === 'top' ? d - (t.team === 'B' ? 180 : 0) - (vertical ? -90 : 0) : d + 90;
+  r = Math.round(r / 15) * 15;            // scatti da 15 gradi: facile metterle dritte
+  return ((r % 360) + 540) % 360 - 180;
+}
+function drawKnob(t) {
+  const [kx, ky, x, y, R] = knobPos(t);
+  const col = (TEAM[t.team] || TEAM.A)[t.lib ? 'lib' : 'fill'];
+  ctx.save();
+  ctx.setLineDash([4, 5]); ctx.strokeStyle = 'rgba(255,255,255,.55)'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.arc(x, y, R, 0, Math.PI * 2); ctx.stroke();
+  ctx.setLineDash([]); ctx.strokeStyle = 'rgba(255,255,255,.85)'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(x + (kx - x) * 0.55, y + (ky - y) * 0.55); ctx.lineTo(kx, ky); ctx.stroke();
+  ctx.shadowColor = 'rgba(0,0,0,.4)'; ctx.shadowBlur = 6; ctx.shadowOffsetY = 2;
+  ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(kx, ky, KNOB_R, 0, Math.PI * 2); ctx.fill();
+  ctx.shadowColor = 'transparent';
+  ctx.strokeStyle = col; ctx.lineWidth = 3; ctx.stroke();
+  // icona: freccia circolare
+  ctx.strokeStyle = '#222'; ctx.lineWidth = 2.2; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.arc(kx, ky, 7.5, -Math.PI * 0.9, Math.PI * 0.55); ctx.stroke();
+  const ex = kx + 7.5 * Math.cos(Math.PI * 0.55), ey = ky + 7.5 * Math.sin(Math.PI * 0.55);
+  ctx.fillStyle = '#222'; ctx.beginPath(); ctx.moveTo(ex - 5, ey + 1); ctx.lineTo(ex + 2, ey - 4); ctx.lineTo(ex + 2.5, ey + 4); ctx.closePath(); ctx.fill();
+  ctx.restore();
+}
 
 function hitToken(sx, sy, slack) {
   const list = visibleTokens();
@@ -829,15 +864,26 @@ cv.addEventListener('pointerdown', e => {
     holding.twisted = true;
     return;
   }
+  // manopola di rotazione (ha la precedenza su tutto)
+  const sel = selectedToken();
+  if (sel && e.pointerType !== 'pen') {
+    const [kx, ky] = knobPos(sel);
+    if (Math.hypot(sx - kx, sy - ky) <= KNOB_R + 12) {
+      active.set(e.pointerId, { kind: 'knob', token: sel, changed: false });
+      return;
+    }
+  }
   // Con le dita si possono sempre spostare gli omini; la Pencil disegna sopra di loro
   const canDrag = tool !== 'erase' && (tool === 'move' || e.pointerType !== 'pen');
   const tok = canDrag ? hitToken(sx, sy, e.pointerType === 'touch' ? 10 : 4) : null;
   if (tok) {
     const [wx, wy] = toWorld(sx, sy);
     active.set(e.pointerId, { kind: 'drag', token: tok, dx: tok.x - wx, dy: tok.y - wy, sx, sy, cur: [sx, sy], moved: false });
+    selectedId = tok.team !== 'ball' ? tok.id : null;
     requestDraw();
     return;
   }
+  if (selectedId) { selectedId = null; requestDraw(); }
   if (tool === 'move') return;
   if (tool === 'erase') {
     active.set(e.pointerId, { kind: 'erase', changed: eraseAt(sx, sy), last: [sx, sy] });
@@ -857,6 +903,11 @@ cv.addEventListener('pointermove', e => {
   const events = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
   const last = events.length ? events[events.length - 1] : e;
   const [sx, sy] = evPos(last);
+  if (a.kind === 'knob') {
+    const r = rotFromFinger(a.token, sx, sy);
+    if (r !== (a.token.rot || 0)) { a.token.rot = r; a.changed = true; requestDraw(); }
+    return;
+  }
   if (a.kind === 'twist') {
     const h = a.drag, ang = Math.atan2(sy - h.cur[1], sx - h.cur[0]);
     let r = a.rot0 + (ang - a.ang0) * 180 / Math.PI;
@@ -898,7 +949,7 @@ function endPointer(e, cancelled) {
   const a = active.get(e.pointerId);
   if (!a) return;
   active.delete(e.pointerId);
-  if (a.kind === 'twist') { if (a.changed) commit(); requestDraw(); return; }
+  if (a.kind === 'twist' || a.kind === 'knob') { if (a.changed) commit(); requestDraw(); return; }
   if (a.kind === 'drag') {
     if (a.moved && a.overTrash && !cancelled) {
       board.tokens = board.tokens.filter(t => t !== a.token);
@@ -1055,7 +1106,7 @@ document.getElementById('open').onclick = () => { renderSchemi(); document.getEl
 
 // ---------- Esporta immagine ----------
 document.getElementById('export').onclick = () => {
-  draw();
+  selectedId = null; draw();
   cv.toBlob(async blob => {
     if (!blob) return;
     const file = new File([blob], 'lavagna-pallavolo.png', { type: 'image/png' });
@@ -1105,7 +1156,6 @@ document.getElementById('reset').onclick = () => {
 };
 document.getElementById('view').onclick = () => { prefs.view = prefs.view === 'full' ? 'half' : 'full'; savePrefs(); updateButtons(); layout(); };
 document.getElementById('style').onclick = () => { prefs.style = prefs.style === 'top' ? 'side' : 'top'; savePrefs(); updateButtons(); draw(); };
-document.getElementById('zones').onclick = () => { prefs.zones = !prefs.zones; savePrefs(); updateButtons(); draw(); };
 
 function updateButtons() {
   document.querySelectorAll('#tools [data-tool]').forEach(b => b.classList.toggle('on', b.dataset.tool === prefs.tool));
@@ -1116,7 +1166,6 @@ function updateButtons() {
   else custom.style.background = '';
   sizesEl.querySelectorAll('.size').forEach((b, i) => b.classList.toggle('on', i === prefs.size));
   document.getElementById('view').textContent = prefs.view === 'full' ? '½ campo' : 'Intero';
-  document.getElementById('zones').classList.toggle('on', prefs.zones);
   document.getElementById('style').textContent = prefs.style === 'top' ? 'Vista: alto' : 'Vista: lato';
   document.querySelector('[data-add="B"]').disabled = prefs.view !== 'full';
   document.getElementById('undo').disabled = hIndex <= 0;
