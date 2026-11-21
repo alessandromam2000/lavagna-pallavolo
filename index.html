@@ -54,9 +54,9 @@
   button.on { background: var(--btn-on); color: #111; }
   button:active { transform: scale(.94); }
   button:disabled { opacity: .35; }
-  button.rot { min-width: 38px; padding: 0 4px; font-weight: 700; }
-  button.rot.a.on { background: #e53935; color: #fff; }
-  button.rot.b.on { background: #1e6fd9; color: #fff; }
+  button.add { font-weight: 600; padding: 0 12px 0 8px; }
+  button.add svg.fig { fill: currentColor; stroke: #fff; stroke-width: 1.4; width: 24px; height: 24px; }
+  button.add span { color: var(--txt); }
   .sw {
     width: 34px; height: 34px; min-width: 34px; border-radius: 50%; padding: 0;
     border: 3px solid transparent; box-shadow: inset 0 0 0 1px rgba(255,255,255,.25);
@@ -127,15 +127,17 @@
   <div id="stage"><canvas id="cv"></canvas></div>
 
   <div class="bar bottom">
-    <div class="group" id="rotA"><span class="lbl" style="color:#ff6b66">ROSSI</span></div>
-    <div class="sep"></div>
-    <div class="group" id="rotB"><span class="lbl" style="color:#6aa8ff">BLU</span></div>
+    <div class="group">
+      <button class="add" data-add="A" title="Aggiungi un giocatore rosso"><svg viewBox="0 0 24 24" class="fig" style="color:#e53935"><circle cx="12" cy="6" r="4"/><path d="M4 22v-6a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v6z"/></svg>+ Rosso</button>
+      <button class="add" data-add="B" title="Aggiungi un giocatore blu"><svg viewBox="0 0 24 24" class="fig" style="color:#1e6fd9"><circle cx="12" cy="6" r="4"/><path d="M4 22v-6a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v6z"/></svg>+ Blu</button>
+      <button class="add" data-add="L" title="Aggiungi un libero"><svg viewBox="0 0 24 24" class="fig" style="color:#ffd23f"><circle cx="12" cy="6" r="4"/><path d="M4 22v-6a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v6z"/></svg>+ Libero</button>
+      <button class="add" data-add="ball" title="Aggiungi un pallone"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 3.5c-2 3-2 6 0 8.5s4 5.5 3 8M4 10c3 1 6 1 8 2m0 0c2 1 5 .5 8-1.5"/></svg>+ Palla</button>
+    </div>
     <div class="spacer"></div>
     <div class="group">
       <button id="view" title="Campo intero / metà campo"></button>
       <button id="zones" title="Numeri delle zone">Zone</button>
-      <button id="showB" title="Mostra/nascondi avversari">Blu</button>
-      <button id="reset" title="Rimetti tutti in posizione"><svg viewBox="0 0 24 24"><path d="M4 12a8 8 0 1 0 2.5-5.8"/><path d="M4 4v5h5"/></svg></button>
+      <button id="reset" title="Rimetti la formazione iniziale"><svg viewBox="0 0 24 24"><path d="M4 12a8 8 0 1 0 2.5-5.8"/><path d="M4 4v5h5"/></svg></button>
     </div>
     <div class="sep"></div>
     <div class="group">
@@ -171,8 +173,8 @@
 // ---------- Costanti del campo (in metri) ----------
 // Campo 18 x 9. x = lunghezza (rete a x=9), y = larghezza. Rossi a sinistra (x 0-9), Blu a destra.
 const VIEWS = {
-  full: { x0: -2.6, x1: 20.6, y0: -1.6, y1: 10.6 },
-  half: { x0: -2.6, x1: 10.2, y0: -1.6, y1: 10.6 }
+  full: { x0: -0.9, x1: 18.9, y0: -0.75, y1: 9.75 },
+  half: { x0: -0.9, x1: 9.9, y0: -0.75, y1: 9.75 }
 };
 const TEAM = {
   A: { fill: '#e53935', text: '#fff', lib: '#ffd23f', libText: '#222' },
@@ -192,7 +194,7 @@ const LS_BOARD = 'lavagnaVolley.board';
 const LS_SCHEMI = 'lavagnaVolley.schemi';
 const LS_PREFS = 'lavagnaVolley.prefs';
 
-let prefs = { view: 'full', zones: true, showB: true, tool: 'move', color: '#ffeb3b', size: 1 };
+let prefs = { view: 'full', zones: true, tool: 'move', color: '#ffeb3b', size: 1 };
 let board;           // { tokens, strokes, rotA, rotB }
 let history = [], hIndex = -1;
 
@@ -213,12 +215,9 @@ function defaultBoard() {
       const [x, y] = rotPos(team, 1, i);
       tokens.push({ id: team + i, team, label: String(i), x, y });
     }
-    tokens.push(team === 'A'
-      ? { id: 'AL', team: 'A', label: 'L', lib: true, x: -1.4, y: 9.6 }
-      : { id: 'BL', team: 'B', label: 'L', lib: true, x: 19.4, y: -0.6 });
   }
-  tokens.push({ id: 'ball', team: 'ball', label: '', x: -1.2, y: 7.5 });
-  return { tokens, strokes: [], rotA: 1, rotB: 1 };
+  tokens.push({ id: 'ball', team: 'ball', label: '', x: -0.45, y: 8.4 });
+  return { tokens, strokes: [] };
 }
 
 function snapshot() { return JSON.stringify(board); }
@@ -258,7 +257,7 @@ function toScreen(x, y) {
 function toWorld(sx, sy) {
   return vertical ? [V.x1 - (sy - OY) / S, V.y0 + (sx - OX) / S] : [V.x0 + (sx - OX) / S, V.y0 + (sy - OY) / S];
 }
-function tokenR() { return Math.max(17, Math.min(34, 0.44 * S)); }
+function figH() { return Math.max(42, Math.min(86, 1.1 * S)); } // altezza della sagoma in px
 function ballR() { return Math.max(12, Math.min(24, 0.31 * S)); }
 
 // ---------- Disegno ----------
@@ -291,8 +290,9 @@ function drawCourt() {
   lineW(6, 0, 6, 9); lineW(12, 0, 12, 9);
   // prolungamenti tratteggiati delle linee d'attacco
   ctx.setLineDash([0.15 * S, 0.2 * S]);
-  lineW(6, 0, 6, -1.75); lineW(6, 9, 6, 10.75);
-  lineW(12, 0, 12, -1.75); lineW(12, 9, 12, 10.75);
+  const ext0 = V.y0 + 0.1, ext1 = V.y1 - 0.1;
+  lineW(6, 0, 6, ext0); lineW(6, 9, 6, ext1);
+  if (prefs.view === 'full') { lineW(12, 0, 12, ext0); lineW(12, 9, 12, ext1); }
   ctx.setLineDash([]);
 
   // numeri delle zone
@@ -310,7 +310,7 @@ function drawCourt() {
   }
 
   // rete e pali
-  const [n0x, n0y] = toScreen(9, -1), [n1x, n1y] = toScreen(9, 10);
+  const [n0x, n0y] = toScreen(9, -0.5), [n1x, n1y] = toScreen(9, 9.5);
   ctx.strokeStyle = 'rgba(0,0,0,.35)'; ctx.lineWidth = Math.max(6, 0.22 * S); ctx.lineCap = 'round';
   ctx.beginPath(); ctx.moveTo(n0x + 2, n0y + 2); ctx.lineTo(n1x + 2, n1y + 2); ctx.stroke();
   ctx.strokeStyle = '#f4f4f4'; ctx.lineWidth = Math.max(4, 0.14 * S);
@@ -400,25 +400,57 @@ function drawBall(x, y, r) {
 function drawToken(t, lifted) {
   const [x, y] = toScreen(t.x, t.y);
   if (t.team === 'ball') { drawBall(x, y, ballR() * (lifted ? 1.12 : 1)); return; }
-  const c = TEAM[t.team];
-  const r = tokenR() * (lifted ? 1.12 : 1);
+  const c = TEAM[t.team] || TEAM.A;
+  const h = figH() * (lifted ? 1.1 : 1), w = h * 0.7;
+  // sagoma: testa + busto con spalle arrotondate
+  const top = y - 0.04 * h, bot = y + 0.5 * h, l = x - w / 2, r = x + w / 2, rr = 0.27 * h, br = 0.06 * h;
+  const body = new Path2D();
+  body.moveTo(l, bot - br); body.lineTo(l, top + rr); body.quadraticCurveTo(l, top, l + rr, top);
+  body.lineTo(r - rr, top); body.quadraticCurveTo(r, top, r, top + rr); body.lineTo(r, bot - br);
+  body.quadraticCurveTo(r, bot, r - br, bot); body.lineTo(l + br, bot); body.quadraticCurveTo(l, bot, l, bot - br); body.closePath();
+  const head = new Path2D(); head.arc(x, y - 0.27 * h, 0.19 * h, 0, Math.PI * 2);
   ctx.save();
-  ctx.shadowColor = 'rgba(0,0,0,.45)'; ctx.shadowBlur = lifted ? 14 : 6; ctx.shadowOffsetY = lifted ? 5 : 2;
+  ctx.shadowColor = 'rgba(0,0,0,.45)'; ctx.shadowBlur = lifted ? 16 : 6; ctx.shadowOffsetY = lifted ? 6 : 2;
   ctx.fillStyle = t.lib ? c.lib : c.fill;
-  ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+  ctx.fill(body); ctx.fill(head);
   ctx.restore();
-  ctx.lineWidth = Math.max(2, r * 0.12); ctx.strokeStyle = 'rgba(255,255,255,.92)';
-  ctx.beginPath(); ctx.arc(x, y, r - ctx.lineWidth / 2, 0, Math.PI * 2); ctx.stroke();
-  const label = t.label || '';
-  const fs = label.length <= 2 ? r * 0.95 : label.length === 3 ? r * 0.72 : r * 0.55;
+  // braccia
+  ctx.strokeStyle = 'rgba(0,0,0,.22)'; ctx.lineWidth = Math.max(1.5, 0.03 * h); ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(l + 0.17 * w, top + 0.2 * h); ctx.lineTo(l + 0.17 * w, bot - 0.07 * h);
+  ctx.moveTo(r - 0.17 * w, top + 0.2 * h); ctx.lineTo(r - 0.17 * w, bot - 0.07 * h);
+  ctx.stroke();
+  ctx.strokeStyle = 'rgba(255,255,255,.95)'; ctx.lineWidth = Math.max(1.5, 0.035 * h);
+  ctx.stroke(body); ctx.stroke(head);
+  const label = (t.label || '').slice(0, 5);
+  const fs = label.length <= 2 ? 0.34 * h : label.length === 3 ? 0.25 * h : 0.19 * h;
   ctx.fillStyle = t.lib ? c.libText : c.text;
   ctx.font = `800 ${Math.round(fs)}px -apple-system, system-ui, sans-serif`;
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillText(label.slice(0, 5), x, y + fs * 0.05);
+  ctx.fillText(label, x, y + 0.25 * h);
 }
 
 function visibleTokens() {
-  return board.tokens.filter(t => t.team !== 'B' || (prefs.showB && prefs.view === 'full'));
+  return board.tokens.filter(t => t.team !== 'B' || prefs.view === 'full');
+}
+
+// cestino: compare in basso mentre trascini un omino
+function trashPos() { return [W / 2, H - 46]; }
+function drawTrash(hot) {
+  const [x, y] = trashPos(), r = hot ? 34 : 28;
+  ctx.save();
+  ctx.fillStyle = hot ? '#e53935' : 'rgba(20,24,31,.85)';
+  ctx.strokeStyle = 'rgba(255,255,255,.9)'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+  const k = r / 28;
+  ctx.lineWidth = 2.2; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  ctx.beginPath();
+  ctx.moveTo(x - 10 * k, y - 7 * k); ctx.lineTo(x + 10 * k, y - 7 * k);
+  ctx.moveTo(x - 4 * k, y - 7 * k); ctx.lineTo(x - 4 * k, y - 11 * k); ctx.lineTo(x + 4 * k, y - 11 * k); ctx.lineTo(x + 4 * k, y - 7 * k);
+  ctx.moveTo(x - 7.5 * k, y - 7 * k); ctx.lineTo(x - 6 * k, y + 11 * k); ctx.lineTo(x + 6 * k, y + 11 * k); ctx.lineTo(x + 7.5 * k, y - 7 * k);
+  ctx.moveTo(x - 2 * k, y - 2 * k); ctx.lineTo(x - 2 * k, y + 6 * k); ctx.moveTo(x + 2 * k, y - 2 * k); ctx.lineTo(x + 2 * k, y + 6 * k);
+  ctx.stroke();
+  ctx.restore();
 }
 
 function draw() {
@@ -430,6 +462,8 @@ function draw() {
   const lifted = new Set([...active.values()].filter(a => a.kind === 'drag').map(a => a.token));
   for (const t of visibleTokens()) if (t.team !== 'ball' && !lifted.has(t)) drawToken(t, false);
   for (const t of visibleTokens()) if (t.team === 'ball' && !lifted.has(t)) drawToken(t, false);
+  const drags = [...active.values()].filter(a => a.kind === 'drag' && a.moved);
+  if (drags.length) drawTrash(drags.some(a => a.overTrash));
   for (const t of lifted) drawToken(t, true);
 }
 let raf = 0;
@@ -445,8 +479,9 @@ function hitToken(sx, sy, slack) {
   const ordered = [...list.filter(t => t.team === 'ball'), ...list.filter(t => t.team !== 'ball').reverse()];
   for (const t of ordered) {
     const [x, y] = toScreen(t.x, t.y);
-    const r = (t.team === 'ball' ? ballR() : tokenR()) + slack;
-    if (Math.hypot(sx - x, sy - y) <= r) return t;
+    if (t.team === 'ball') { if (Math.hypot(sx - x, sy - y) <= ballR() + slack) return t; continue; }
+    const h = figH(), w = h * 0.7;
+    if (Math.abs(sx - x) <= w / 2 + slack && sy >= y - 0.46 * h - slack && sy <= y + 0.5 * h + slack) return t;
   }
   return null;
 }
@@ -511,6 +546,8 @@ cv.addEventListener('pointermove', e => {
     if (Math.hypot(sx - a.sx, sy - a.sy) > 4) a.moved = true;
     const [wx, wy] = toWorld(sx, sy);
     [a.token.x, a.token.y] = clampWorld(wx + a.dx, wy + a.dy);
+    const [tx, ty] = trashPos();
+    a.overTrash = a.moved && Math.hypot(sx - tx, sy - ty) < 48;
   } else if (a.kind === 'draw') {
     const pts = a.stroke.pts;
     for (const ev of (events.length ? events : [e])) {
@@ -531,7 +568,10 @@ function endPointer(e, cancelled) {
   if (!a) return;
   active.delete(e.pointerId);
   if (a.kind === 'drag') {
-    if (a.moved) commit();
+    if (a.moved && a.overTrash && !cancelled) {
+      board.tokens = board.tokens.filter(t => t !== a.token);
+      commit(); toast('Tolto (puoi annullare)');
+    } else if (a.moved) commit();
     else if (!cancelled && a.token.team !== 'ball') {
       const now = Date.now();
       if (lastTap.id === a.token.id && now - lastTap.time < 400) { lastTap = { id: null, time: 0 }; editLabel(a.token); }
@@ -553,29 +593,35 @@ document.addEventListener('gesturestart', e => e.preventDefault());
 document.addEventListener('touchmove', e => { if (!e.target.closest('.bar, .list')) e.preventDefault(); }, { passive: false });
 document.addEventListener('dblclick', e => e.preventDefault());
 
-// ---------- Animazione rotazioni ----------
-function animateTo(targets) {
-  const start = targets.map(([t]) => [t.x, t.y]);
-  const t0 = performance.now(), dur = 380;
-  function step(now) {
-    const k = Math.min(1, (now - t0) / dur), e = 1 - Math.pow(1 - k, 3);
-    targets.forEach(([t, x, y], i) => { t.x = start[i][0] + (x - start[i][0]) * e; t.y = start[i][1] + (y - start[i][1]) * e; });
-    draw();
-    if (k < 1) requestAnimationFrame(step); else commit();
+// ---------- Aggiungi omini / palla ----------
+function freeSpot(cx, cy) {
+  // cerca un punto libero vicino al centro della meta' campo
+  const cand = [[0, 0], [0, -1.6], [0, 1.6], [-1.4, 0], [1.4, 0], [-1.4, -1.6], [1.4, 1.6], [-1.4, 1.6], [1.4, -1.6], [0, -3.2], [0, 3.2]];
+  for (const [dx, dy] of cand) {
+    const x = cx + dx, y = cy + dy;
+    if (!board.tokens.some(t => Math.abs(t.x - x) < 0.9 && Math.abs(t.y - y) < 1.2)) return [x, y];
   }
-  requestAnimationFrame(step);
+  return [cx + (Math.random() - 0.5), cy + (Math.random() - 0.5)];
 }
-function setRotation(team, rot) {
-  board['rot' + team] = rot;
-  const targets = [];
-  for (let i = 1; i <= 6; i++) {
-    const t = board.tokens.find(x => x.id === team + i);
-    if (t) targets.push([t, ...rotPos(team, rot, i)]);
+function addToken(kind) {
+  const id = 't' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+  let tok;
+  if (kind === 'ball') {
+    const [x, y] = freeSpot(prefs.view === 'full' ? 9 - 1.2 : 4.5, 4.5);
+    tok = { id, team: 'ball', label: '', x, y };
+  } else {
+    const team = kind === 'B' ? 'B' : 'A';
+    const used = new Set(board.tokens.filter(t => t.team === team).map(t => t.label));
+    let label = 'L';
+    if (kind !== 'L') { let n = 1; while (used.has(String(n))) n++; label = String(n); }
+    const [x, y] = freeSpot(team === 'A' ? 4.5 : 13.5, 4.5);
+    tok = { id, team, label, x, y };
+    if (kind === 'L') tok.lib = true;
   }
-  if (team === 'B' && (!prefs.showB || prefs.view !== 'full')) { prefs.showB = true; prefs.view = 'full'; savePrefs(); layout(); }
-  updateButtons();
-  animateTo(targets);
+  board.tokens.push(tok);
+  commit(); draw();
 }
+document.querySelectorAll('[data-add]').forEach(b => b.onclick = () => addToken(b.dataset.add));
 
 // ---------- Testo (etichette, nomi schemi) ----------
 const mText = document.getElementById('mText'), tInput = document.getElementById('tInput');
@@ -676,30 +722,14 @@ SIZES.forEach((s, i) => {
 
 document.querySelectorAll('#tools [data-tool]').forEach(b => b.onclick = () => { prefs.tool = b.dataset.tool; savePrefs(); updateButtons(); });
 
-for (const team of ['A', 'B']) {
-  const g = document.getElementById('rot' + team);
-  for (let r = 1; r <= 6; r++) {
-    const b = document.createElement('button'); b.className = 'rot ' + team.toLowerCase(); b.textContent = 'P' + r;
-    b.title = 'Rotazione ' + r + ' (il n.1 in zona ' + r + ')';
-    b.dataset.team = team; b.dataset.rot = r;
-    b.onclick = () => setRotation(team, r);
-    g.append(b);
-  }
-}
-
 document.getElementById('undo').onclick = () => { if (hIndex > 0) restore(history[--hIndex]); };
 document.getElementById('redo').onclick = () => { if (hIndex < history.length - 1) restore(history[++hIndex]); };
 document.getElementById('clearDraw').onclick = () => { if (!board.strokes.length) return; board.strokes = []; commit(); draw(); toast('Disegni cancellati (puoi annullare)'); };
 document.getElementById('reset').onclick = () => {
-  const d = defaultBoard();
-  const targets = [];
-  for (const t of board.tokens) { const n = d.tokens.find(x => x.id === t.id); if (n) targets.push([t, n.x, n.y]); }
-  board.rotA = 1; board.rotB = 1; updateButtons();
-  animateTo(targets);
+  board.tokens = defaultBoard().tokens; commit(); draw(); toast('Formazione iniziale (puoi annullare)');
 };
 document.getElementById('view').onclick = () => { prefs.view = prefs.view === 'full' ? 'half' : 'full'; savePrefs(); updateButtons(); layout(); };
 document.getElementById('zones').onclick = () => { prefs.zones = !prefs.zones; savePrefs(); updateButtons(); draw(); };
-document.getElementById('showB').onclick = () => { prefs.showB = !prefs.showB; savePrefs(); updateButtons(); draw(); };
 
 function updateButtons() {
   document.querySelectorAll('#tools [data-tool]').forEach(b => b.classList.toggle('on', b.dataset.tool === prefs.tool));
@@ -709,10 +739,9 @@ function updateButtons() {
   if (!match) custom.style.background = prefs.color;
   else custom.style.background = '';
   sizesEl.querySelectorAll('.size').forEach((b, i) => b.classList.toggle('on', i === prefs.size));
-  document.querySelectorAll('button.rot').forEach(b => b.classList.toggle('on', board && +b.dataset.rot === board['rot' + b.dataset.team]));
   document.getElementById('view').textContent = prefs.view === 'full' ? '½ campo' : 'Intero';
   document.getElementById('zones').classList.toggle('on', prefs.zones);
-  document.getElementById('showB').classList.toggle('on', prefs.showB);
+  document.querySelector('[data-add="B"]').disabled = prefs.view !== 'full';
   document.getElementById('undo').disabled = hIndex <= 0;
   document.getElementById('redo').disabled = hIndex >= history.length - 1;
 }
@@ -727,6 +756,10 @@ function toast(msg) {
 prefs = Object.assign(prefs, lsGet(LS_PREFS) || {});
 const saved = lsGet(LS_BOARD);
 board = saved && Array.isArray(saved.tokens) ? saved : defaultBoard();
+for (const t of board.tokens) { // riporta dentro chi era rimasto fuori dal campo visibile
+  t.x = Math.max(VIEWS.full.x0 + 0.3, Math.min(VIEWS.full.x1 - 0.3, t.x));
+  t.y = Math.max(VIEWS.full.y0 + 0.3, Math.min(VIEWS.full.y1 - 0.3, t.y));
+}
 commit();
 new ResizeObserver(layout).observe(document.getElementById('stage'));
 window.addEventListener('orientationchange', () => setTimeout(layout, 200));
