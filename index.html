@@ -67,7 +67,7 @@
   .size { min-width: 40px; }
   .size i { display: block; background: currentColor; border-radius: 50%; }
   #stage { position: relative; flex: 1; min-height: 0; }
-  canvas { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; display: block; }
+  #cv { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; display: block; }
   /* finestre */
   .modal {
     position: fixed; inset: 0; background: rgba(0,0,0,.55); display: none; align-items: center; justify-content: center; z-index: 10; padding: 16px;
@@ -89,6 +89,11 @@
     border-radius: 10px; padding: 12px; -webkit-user-select: text; user-select: text;
   }
   .sheet .body { padding: 4px 18px 0; }
+  .poses { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin-top: 14px; }
+  .pose { flex-direction: column; height: auto; padding: 6px 2px 8px; gap: 2px; background: #c8743a; border: 3px solid transparent; }
+  .pose canvas { width: 100%; max-width: 72px; height: auto; }
+  .pose span { font-size: 12px; font-weight: 700; color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,.5); }
+  .pose.on { background: #c8743a; border-color: #fff; box-shadow: 0 0 0 2px var(--accent); }
   .empty { color: var(--txt-dim); padding: 18px 6px; text-align: center; }
   button.primary { background: var(--accent); color: #fff; font-weight: 600; }
   button.danger { background: #4a2328; color: #ff9a9a; }
@@ -153,6 +158,17 @@
     <h2>Schemi salvati</h2>
     <div class="list" id="schemiList"></div>
     <div class="foot"><button data-close>Chiudi</button></div>
+  </div>
+</div>
+
+<div class="modal" id="mPlayer">
+  <div class="sheet">
+    <h2>Giocatore</h2>
+    <div class="body">
+      <input type="text" id="pInput" maxlength="12" autocomplete="off" placeholder="Numero o nome">
+      <div class="poses" id="poses"></div>
+    </div>
+    <div class="foot"><button data-close>Annulla</button><button class="primary" id="pOk">OK</button></div>
   </div>
 </div>
 
@@ -257,8 +273,8 @@ function toScreen(x, y) {
 function toWorld(sx, sy) {
   return vertical ? [V.x1 - (sy - OY) / S, V.y0 + (sx - OX) / S] : [V.x0 + (sx - OX) / S, V.y0 + (sy - OY) / S];
 }
-function figH() { return Math.max(42, Math.min(86, 1.1 * S)); } // altezza della sagoma in px
-function ballR() { return Math.max(12, Math.min(24, 0.31 * S)); }
+function figH() { return Math.max(78, Math.min(150, 1.95 * S)); } // altezza del giocatore in px
+function ballR() { return Math.max(13, Math.min(28, 0.34 * S)); }
 
 // ---------- Disegno ----------
 function rectW(x0, y0, x1, y1) {
@@ -378,56 +394,140 @@ function drawStroke(s) {
   ctx.restore();
 }
 
+// ---------- Pallone (disegnato sul modello giallo/blu) ----------
+const BALL_BLUE = new Path2D('M395 140 C330 165 262 208 224 262 C200 298 204 330 238 358 C270 382 330 392 420 395 C470 395 500 385 520 385 C560 388 600 412 640 445 C668 470 696 502 716 516 C748 514 776 504 786 494 C804 466 811 420 806 380 C798 330 778 280 750 243 C738 228 738 218 728 208 C790 240 840 310 862 390 C875 440 876 510 872 565 C840 575 815 585 800 592 C790 650 770 720 745 770 C725 810 705 840 690 855 C660 862 630 866 600 866 C625 820 655 750 680 680 C694 640 704 604 702 574 C680 578 650 580 600 580 C540 582 450 580 380 572 C300 562 230 522 190 482 C178 468 170 458 165 452 C150 460 138 470 128 480 C126 400 145 320 195 250 C250 190 320 155 395 140 Z');
+const BALL_SEAMS = new Path2D('M300 215 C360 230 420 215 470 160 M560 240 C600 280 640 340 660 420 M335 592 C325 670 335 750 372 812 M372 812 C450 838 520 852 596 862 M455 600 C470 660 470 720 455 780');
 function drawBall(x, y, r) {
   ctx.save();
-  ctx.shadowColor = 'rgba(0,0,0,.4)'; ctx.shadowBlur = 6; ctx.shadowOffsetY = 2;
-  ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+  ctx.translate(x, y);
+  ctx.shadowColor = 'rgba(0,0,0,.45)'; ctx.shadowBlur = r * 0.5; ctx.shadowOffsetY = r * 0.18;
+  ctx.fillStyle = '#f5c400'; ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.fill();
+  ctx.shadowColor = 'transparent';
+  ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.clip();
+  const k = r / 373;
+  ctx.scale(k, k); ctx.translate(-500, -499);
+  ctx.fillStyle = '#ffd30f'; ctx.fillRect(100, 100, 800, 800);
+  ctx.fillStyle = '#2440b8'; ctx.fill(BALL_BLUE);
+  ctx.strokeStyle = 'rgba(20,30,110,.55)'; ctx.lineWidth = 7; ctx.stroke(BALL_BLUE);
+  if (r > 16) { ctx.strokeStyle = 'rgba(150,100,0,.28)'; ctx.lineWidth = 7; ctx.stroke(BALL_SEAMS); }
+  const g = ctx.createRadialGradient(400, 330, 10, 500, 499, 373);
+  g.addColorStop(0, 'rgba(255,255,255,.38)'); g.addColorStop(0.4, 'rgba(255,255,255,0)');
+  g.addColorStop(0.78, 'rgba(0,0,0,.06)'); g.addColorStop(1, 'rgba(0,0,0,.4)');
+  ctx.fillStyle = g; ctx.fillRect(100, 100, 800, 800);
   ctx.restore();
-  ctx.save();
-  ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.clip();
-  ctx.lineWidth = r * 0.42;
-  ctx.strokeStyle = '#ffc928';
-  ctx.beginPath(); ctx.arc(x - r * 0.9, y - r * 1.1, r * 1.25, 0.2, 1.4); ctx.stroke();
-  ctx.strokeStyle = '#1f5fc9';
-  ctx.beginPath(); ctx.arc(x + r * 1.2, y + r * 0.3, r * 1.15, 2.3, 3.9); ctx.stroke();
-  ctx.strokeStyle = '#ffc928';
-  ctx.beginPath(); ctx.arc(x - r * 0.2, y + r * 1.5, r * 1.0, 4.0, 5.6); ctx.stroke();
-  ctx.restore();
-  ctx.strokeStyle = 'rgba(0,0,0,.45)'; ctx.lineWidth = 1.2;
-  ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.stroke();
+}
+
+// ---------- Giocatori (sagoma realistica in posa) ----------
+// coordinate in unita' (altezza ~100), piedi in (0,0), y verso l'alto negativo, guarda a destra
+const POSES = {
+  ready:  { name: 'Ricezione', lift: 0,  head: [11, -77], neck: [7, -69], sh: [4, -64], hip: [-6, -40], eN: [15, -49], hN: [27, -40], eF: [12, -50], hF: [25, -41], kN: [9, -23], aN: [3, -3], kF: [0, -22], aF: [-11, -3] },
+  set:    { name: 'Palleggio', lift: 0,  head: [3, -85], neck: [1, -76], sh: [0, -71], hip: [-2, -44], eN: [13, -77], hN: [15, -96], eF: [10, -78], hF: [12, -97], kN: [5, -23], aN: [3, -2], kF: [-3, -23], aF: [-8, -2] },
+  attack: { name: 'Attacco',   lift: 16, head: [4, -86], neck: [1, -77], sh: [-1, -72], hip: [-5, -46], eN: [-9, -89], hN: [-3, -106], eF: [13, -72], hF: [22, -82], kN: [5, -30], aN: [-6, -14], kF: [-9, -32], aF: [-17, -18] },
+  block:  { name: 'Muro',      lift: 10, head: [1, -86], neck: [0, -77], sh: [0, -72], hip: [-1, -46], eN: [5, -90], hN: [9, -107], eF: [3, -91], hF: [7, -108], kN: [3, -24], aN: [1, -2], kF: [-3, -24], aF: [-5, -2] },
+  serve:  { name: 'Battuta',   lift: 0,  head: [2, -85], neck: [0, -76], sh: [-1, -71], hip: [-2, -45], eN: [-11, -82], hN: [-8, -99], eF: [10, -77], hF: [17, -91], kN: [5, -24], aN: [8, -2], kF: [-6, -23], aF: [-11, -2] }
+};
+const POSE_KEYS = Object.keys(POSES);
+
+function shade(hex, f) {
+  const n = parseInt(hex.slice(1), 16);
+  let r = n >> 16, g = (n >> 8) & 255, b = n & 255;
+  if (f < 0) { r *= 1 + f; g *= 1 + f; b *= 1 + f; } else { r += (255 - r) * f; g += (255 - g) * f; b += (255 - b) * f; }
+  return `rgb(${r | 0},${g | 0},${b | 0})`;
+}
+function seg(c, a, b, w, col, butt) { c.lineCap = butt ? 'butt' : 'round'; c.strokeStyle = col; c.lineWidth = w; c.beginPath(); c.moveTo(a[0], a[1]); c.lineTo(b[0], b[1]); c.stroke(); }
+function lerp(a, b, t) { return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]; }
+
+// disegna un giocatore con i piedi in (x,y), alto h pixel
+function drawPlayer(c, x, y, h, o) {
+  const P = POSES[o.pose] || POSES.ready;
+  const k = h / 100, dir = o.mirror ? -1 : 1;
+  const skin = '#e6b089', skinD = '#c48a62', hair = '#3a2719';
+  const jersey = o.color, jerseyD = shade(o.color, -0.32), jerseyL = shade(o.color, 0.18);
+  const shorts = '#1d2027', shortsD = '#111317', pad = '#2b2e35', sock = '#f2f2f2', shoe = '#fafafa';
+  c.save();
+  c.translate(x, y);
+  // ombra a terra
+  c.fillStyle = 'rgba(0,0,0,' + (P.lift ? .22 : .32) + ')';
+  c.beginPath(); c.ellipse(0, 0, 20 * k, 5 * k, 0, 0, Math.PI * 2); c.fill();
+  c.translate(0, -P.lift * k);
+  c.scale(dir * k, k);
+  c.lineCap = 'round'; c.lineJoin = 'round';
+
+  function leg(hip, kn, an, far) {
+    const s = far ? skinD : skin;
+    seg(c, hip, kn, 11, s);
+    seg(c, hip, lerp(hip, kn, 0.55), 12.5, far ? shortsD : shorts, true);
+    seg(c, kn, an, 8, s);
+    seg(c, lerp(kn, an, 0.7), an, 8.4, far ? '#d6d6d6' : sock, true);
+    seg(c, lerp(kn, an, -0.12), lerp(kn, an, 0.2), 9.6, far ? '#1b1d22' : pad, true);
+    const toe = [an[0] + 9, an[1] + 0.5];
+    seg(c, [an[0] - 2, an[1]], toe, 6.5, far ? '#d9d9d9' : shoe);
+    seg(c, [an[0] - 3, an[1] + 3], [toe[0] + 1, toe[1] + 3], 1.6, '#555');
+  }
+  function arm(sh, el, ha, far) {
+    const s = far ? skinD : skin;
+    seg(c, sh, el, 7, s);
+    seg(c, el, ha, 6, s);
+    seg(c, sh, lerp(sh, el, 0.38), 9, far ? jerseyD : jersey, true);
+    c.fillStyle = s; c.beginPath(); c.arc(ha[0], ha[1], 3.6, 0, Math.PI * 2); c.fill();
+  }
+  const sp = [P.sh[0] - P.hip[0], P.sh[1] - P.hip[1]], L = Math.hypot(sp[0], sp[1]);
+  const nx = -sp[1] / L, ny = sp[0] / L; // perpendicolare alla schiena
+  const shF = [P.sh[0] - nx * 2, P.sh[1] - ny * 2], hipF = [P.hip[0] - nx * 1.5, P.hip[1] - ny * 1.5];
+
+  leg(hipF, P.kF, P.aF, true);
+  arm(shF, P.eF, P.hF, true);
+  // pantaloncini
+  c.fillStyle = shorts; c.beginPath(); c.arc(P.hip[0], P.hip[1] + 1, 9.5, 0, Math.PI * 2); c.fill();
+  // maglia
+  const T = new Path2D();
+  T.moveTo(P.sh[0] + nx * 9, P.sh[1] + ny * 9);
+  T.lineTo(P.sh[0] - nx * 8, P.sh[1] - ny * 8);
+  T.lineTo(P.hip[0] - nx * 9, P.hip[1] - ny * 9 + 2);
+  T.lineTo(P.hip[0] + nx * 9.5, P.hip[1] + ny * 9.5 + 2);
+  T.closePath();
+  const g = c.createLinearGradient(P.hip[0] - 10, 0, P.hip[0] + 12, 0);
+  g.addColorStop(0, jerseyD); g.addColorStop(0.55, jersey); g.addColorStop(1, jerseyL);
+  c.fillStyle = g; c.strokeStyle = g; c.lineWidth = 5; c.fill(T); c.stroke(T);
+  leg(P.hip, P.kN, P.aN, false);
+  // collo e testa
+  seg(c, P.neck, lerp(P.neck, P.head, 0.6), 6.5, skinD);
+  c.fillStyle = hair; c.beginPath(); c.arc(P.head[0] - 1.6, P.head[1] - 1.3, 8.6, 0, Math.PI * 2); c.fill();
+  c.fillStyle = skin; c.beginPath(); c.arc(P.head[0] + 1.2, P.head[1] + 0.9, 7.4, 0, Math.PI * 2); c.fill();
+  c.fillStyle = skinD; c.beginPath(); c.arc(P.head[0] - 1.5, P.head[1] + 1.5, 1.9, 0, Math.PI * 2); c.fill();
+  arm(P.sh, P.eN, P.hN, false);
+  c.restore();
+
+  // numero sulla maglia (mai specchiato)
+  const label = (o.label || '').slice(0, 12);
+  const cx = x + dir * ((P.sh[0] + P.hip[0]) / 2 + nx * 1) * k, cy = y + (((P.sh[1] + P.hip[1]) / 2) - P.lift) * k;
+  c.save();
+  c.textAlign = 'center'; c.textBaseline = 'middle'; c.lineJoin = 'round';
+  if (label.length && label.length <= 2) {
+    c.font = `900 ${Math.round(19 * k)}px -apple-system, system-ui, sans-serif`;
+    c.lineWidth = Math.max(2, 2.6 * k); c.strokeStyle = o.textStroke || 'rgba(0,0,0,.55)';
+    c.strokeText(label, cx, cy); c.fillStyle = o.text || '#fff'; c.fillText(label, cx, cy);
+  } else if (label.length) {
+    const fs = Math.max(11, Math.round(10 * k));
+    c.font = `700 ${fs}px -apple-system, system-ui, sans-serif`;
+    const w = c.measureText(label).width + fs;
+    c.fillStyle = 'rgba(15,18,24,.82)';
+    c.beginPath(); c.roundRect(x - w / 2, y + 4 * k, w, fs * 1.45, fs * 0.72); c.fill();
+    c.fillStyle = '#fff'; c.fillText(label, x, y + 4 * k + fs * 0.75);
+  }
+  c.restore();
 }
 
 function drawToken(t, lifted) {
   const [x, y] = toScreen(t.x, t.y);
   if (t.team === 'ball') { drawBall(x, y, ballR() * (lifted ? 1.12 : 1)); return; }
   const c = TEAM[t.team] || TEAM.A;
-  const h = figH() * (lifted ? 1.1 : 1), w = h * 0.7;
-  // sagoma: testa + busto con spalle arrotondate
-  const top = y - 0.04 * h, bot = y + 0.5 * h, l = x - w / 2, r = x + w / 2, rr = 0.27 * h, br = 0.06 * h;
-  const body = new Path2D();
-  body.moveTo(l, bot - br); body.lineTo(l, top + rr); body.quadraticCurveTo(l, top, l + rr, top);
-  body.lineTo(r - rr, top); body.quadraticCurveTo(r, top, r, top + rr); body.lineTo(r, bot - br);
-  body.quadraticCurveTo(r, bot, r - br, bot); body.lineTo(l + br, bot); body.quadraticCurveTo(l, bot, l, bot - br); body.closePath();
-  const head = new Path2D(); head.arc(x, y - 0.27 * h, 0.19 * h, 0, Math.PI * 2);
-  ctx.save();
-  ctx.shadowColor = 'rgba(0,0,0,.45)'; ctx.shadowBlur = lifted ? 16 : 6; ctx.shadowOffsetY = lifted ? 6 : 2;
-  ctx.fillStyle = t.lib ? c.lib : c.fill;
-  ctx.fill(body); ctx.fill(head);
-  ctx.restore();
-  // braccia
-  ctx.strokeStyle = 'rgba(0,0,0,.22)'; ctx.lineWidth = Math.max(1.5, 0.03 * h); ctx.lineCap = 'round';
-  ctx.beginPath();
-  ctx.moveTo(l + 0.17 * w, top + 0.2 * h); ctx.lineTo(l + 0.17 * w, bot - 0.07 * h);
-  ctx.moveTo(r - 0.17 * w, top + 0.2 * h); ctx.lineTo(r - 0.17 * w, bot - 0.07 * h);
-  ctx.stroke();
-  ctx.strokeStyle = 'rgba(255,255,255,.95)'; ctx.lineWidth = Math.max(1.5, 0.035 * h);
-  ctx.stroke(body); ctx.stroke(head);
-  const label = (t.label || '').slice(0, 5);
-  const fs = label.length <= 2 ? 0.34 * h : label.length === 3 ? 0.25 * h : 0.19 * h;
-  ctx.fillStyle = t.lib ? c.libText : c.text;
-  ctx.font = `800 ${Math.round(fs)}px -apple-system, system-ui, sans-serif`;
-  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillText(label, x, y + 0.25 * h);
+  const fh = figH() * (lifted ? 1.08 : 1);
+  drawPlayer(ctx, x, y + 0.45 * fh, fh, {
+    pose: t.pose, label: t.label, mirror: t.team === 'B',
+    color: t.lib ? c.lib : c.fill, text: t.lib ? c.libText : c.text,
+    textStroke: t.lib ? 'rgba(255,255,255,.6)' : 'rgba(0,0,0,.55)'
+  });
 }
 
 function visibleTokens() {
@@ -480,8 +580,9 @@ function hitToken(sx, sy, slack) {
   for (const t of ordered) {
     const [x, y] = toScreen(t.x, t.y);
     if (t.team === 'ball') { if (Math.hypot(sx - x, sy - y) <= ballR() + slack) return t; continue; }
-    const h = figH(), w = h * 0.7;
-    if (Math.abs(sx - x) <= w / 2 + slack && sy >= y - 0.46 * h - slack && sy <= y + 0.5 * h + slack) return t;
+    const h = figH(), P = POSES[t.pose] || POSES.ready;
+    const feet = y + 0.45 * h, top = feet - (1.08 + P.lift / 100) * h;
+    if (Math.abs(sx - x) <= 0.27 * h + slack && sy >= top - slack && sy <= feet + 0.06 * h + slack) return t;
   }
   return null;
 }
@@ -599,7 +700,7 @@ function freeSpot(cx, cy) {
   const cand = [[0, 0], [0, -1.6], [0, 1.6], [-1.4, 0], [1.4, 0], [-1.4, -1.6], [1.4, 1.6], [-1.4, 1.6], [1.4, -1.6], [0, -3.2], [0, 3.2]];
   for (const [dx, dy] of cand) {
     const x = cx + dx, y = cy + dy;
-    if (!board.tokens.some(t => Math.abs(t.x - x) < 0.9 && Math.abs(t.y - y) < 1.2)) return [x, y];
+    if (!board.tokens.some(t => Math.abs(t.x - x) < 1.0 && Math.abs(t.y - y) < 1.4)) return [x, y];
   }
   return [cx + (Math.random() - 0.5), cy + (Math.random() - 0.5)];
 }
@@ -639,9 +740,35 @@ tInput.addEventListener('keydown', e => { if (e.key === 'Enter') document.getEle
 document.querySelectorAll('[data-close]').forEach(b => b.onclick = closeModals);
 document.querySelectorAll('.modal').forEach(m => m.addEventListener('pointerdown', e => { if (e.target === m) closeModals(); }));
 
-function editLabel(t) {
-  askText('Nome / numero del giocatore', t.label, v => { t.label = v.slice(0, 5); commit(); draw(); });
+// finestra giocatore: nome/numero + posa
+const mPlayer = document.getElementById('mPlayer'), pInput = document.getElementById('pInput'), posesEl = document.getElementById('poses');
+let editing = null, editPose = 'ready';
+function renderPoses() {
+  posesEl.innerHTML = '';
+  const c = TEAM[editing.team] || TEAM.A;
+  for (const key of POSE_KEYS) {
+    const b = document.createElement('button');
+    b.className = 'pose' + (key === editPose ? ' on' : '');
+    const cv2 = document.createElement('canvas'); cv2.width = 120; cv2.height = 150;
+    const c2 = cv2.getContext('2d');
+    drawPlayer(c2, 60, 140, 112, { pose: key, color: editing.lib ? c.lib : c.fill, mirror: editing.team === 'B', label: '' });
+    const s = document.createElement('span'); s.textContent = POSES[key].name;
+    b.append(cv2, s);
+    b.onclick = () => { editPose = key; renderPoses(); };
+    posesEl.append(b);
+  }
 }
+function editLabel(t) {
+  editing = t; editPose = t.pose || 'ready';
+  pInput.value = t.label || '';
+  renderPoses();
+  mPlayer.classList.add('open');
+}
+document.getElementById('pOk').onclick = () => {
+  if (editing) { editing.label = pInput.value.trim().slice(0, 12); editing.pose = editPose; commit(); draw(); }
+  closeModals();
+};
+pInput.addEventListener('keydown', e => { if (e.key === 'Enter') document.getElementById('pOk').click(); });
 
 // ---------- Schemi salvati ----------
 function getSchemi() { return lsGet(LS_SCHEMI) || []; }
