@@ -89,6 +89,9 @@
     border-radius: 10px; padding: 12px; -webkit-user-select: text; user-select: text;
   }
   .sheet .body { padding: 4px 18px 0; }
+  .rotrow { display: flex; align-items: center; gap: 6px; margin-top: 14px; }
+  .rotrow input[type=range] { flex: 1; min-width: 80px; accent-color: var(--accent); height: 44px; }
+  .rotval { min-width: 44px; text-align: right; font-variant-numeric: tabular-nums; color: var(--txt-dim); }
   .poses { display: grid; grid-template-columns: repeat(auto-fill, minmax(72px, 1fr)); gap: 8px; margin-top: 14px; }
   .pose { flex-direction: column; height: auto; padding: 6px 2px 8px; gap: 2px; background: #c8743a; border: 3px solid transparent; }
   .pose canvas { width: 100%; max-width: 72px; height: auto; }
@@ -141,6 +144,7 @@
     <div class="spacer"></div>
     <div class="group">
       <button id="view" title="Campo intero / metà campo"></button>
+      <button id="style" title="Giocatori visti dall'alto o di lato"></button>
       <button id="zones" title="Numeri delle zone">Zone</button>
       <button id="reset" title="Svuota la lavagna (omini e disegni)"><svg viewBox="0 0 24 24"><path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5"/><path d="M10 13l5 5M15 13l-5 5"/></svg>Svuota</button>
     </div>
@@ -166,6 +170,14 @@
     <h2>Giocatore</h2>
     <div class="body">
       <input type="text" id="pInput" maxlength="12" autocomplete="off" placeholder="Numero o nome">
+      <div class="rotrow">
+        <span class="lbl">Rotazione</span>
+        <button data-rot="-45" title="Ruota a sinistra">↺</button>
+        <input type="range" id="pRot" min="-180" max="180" step="5" value="0">
+        <button data-rot="45" title="Ruota a destra">↻</button>
+        <span id="pRotVal" class="rotval">0°</span>
+        <button data-rot="0" title="Rimetti dritto">0°</button>
+      </div>
       <div class="poses" id="poses"></div>
     </div>
     <div class="foot"><button data-close>Annulla</button><button class="primary" id="pOk">OK</button></div>
@@ -210,7 +222,7 @@ const LS_BOARD = 'lavagnaVolley.board';
 const LS_SCHEMI = 'lavagnaVolley.schemi';
 const LS_PREFS = 'lavagnaVolley.prefs';
 
-let prefs = { view: 'full', zones: true, tool: 'move', color: '#ffeb3b', size: 1 };
+let prefs = { view: 'full', zones: true, style: 'top', tool: 'move', color: '#ffeb3b', size: 1 };
 let board;           // { tokens, strokes, rotA, rotB }
 let history = [], hIndex = -1;
 
@@ -564,17 +576,125 @@ function drawPlayer(c, x, y, h, o) {
   c.restore();
 }
 
+// ---------- Giocatori visti dall'alto ----------
+// Unita': spalle larghe ~44. Il giocatore guarda verso +x, il suo lato destro e' +y.
+const TOP_POSES = {
+  ready:  { head: [5, 0],  feet: [[7, 16], [7, -16]], arms: [[[0, 18], [12, 14], [25, 4]], [[0, -18], [12, -14], [25, -4]]] },
+  dig:    { head: [9, 0],  feet: [[10, 22], [10, -22]], arms: [[[1, 18], [15, 15], [29, 4]], [[1, -18], [15, -15], [29, -4]]] },
+  set:    { head: [3, 0],  feet: [[4, 12], [-6, -12]], arms: [[[0, 18], [9, 19], [15, 7]], [[0, -18], [9, -19], [15, -7]]] },
+  attack: { head: [3, 0],  feet: [[-4, 10], [-8, -10]], lift: 1, arms: [[[-2, 18], [-10, 23], [-2, 27]], [[0, -18], [13, -16], [24, -10]]] },
+  block:  { head: [3, 0],  feet: [[2, 10], [2, -10]], lift: 1, arms: [[[0, 18], [10, 17], [19, 13]], [[0, -18], [10, -17], [19, -13]]] },
+  serve:  { head: [3, 0],  feet: [[6, 13], [-8, -13]], arms: [[[-2, 18], [-11, 22], [-4, 27]], [[0, -18], [12, -15], [22, -7]]] }
+};
+
+function drawPlayerTop(c, x, y, w, o) {
+  const P = TOP_POSES[o.pose] || TOP_POSES.ready;
+  const k = w / 50;
+  const ang = (o.angle || 0) * Math.PI / 180;
+  const main = o.color, dark = shade(o.color, -0.35), light = shade(o.color, 0.25);
+  const skin = '#e3a983', skinD = '#b97d58';
+  c.save();
+  c.translate(x, y);
+  // ombra (spostata se in salto)
+  const lift = P.lift ? 1 : 0;
+  c.fillStyle = 'rgba(0,0,0,' + (lift ? .18 : .3) + ')';
+  c.beginPath(); c.ellipse(3 * k + lift * 5 * k, 4 * k + lift * 7 * k, 24 * k, 24 * k, 0, 0, Math.PI * 2); c.fill();
+  c.rotate(ang);
+  c.scale(k * (lift ? 1.06 : 1), k * (lift ? 1.06 : 1));
+  c.lineCap = 'round'; c.lineJoin = 'round';
+
+  // scarpe
+  for (const f of P.feet) {
+    c.fillStyle = '#f2f2f2'; c.strokeStyle = 'rgba(0,0,0,.35)'; c.lineWidth = 1;
+    c.beginPath(); c.ellipse(f[0], f[1], 6, 3.4, 0, 0, Math.PI * 2); c.fill(); c.stroke();
+  }
+  // pantaloncini (si vedono dietro il busto)
+  c.fillStyle = shade(o.color, -0.65);
+  c.beginPath(); c.ellipse(-7, 0, 9, 15, 0, 0, Math.PI * 2); c.fill();
+
+  // braccia: contorno + pelle + manica
+  function armPath(a) { c.beginPath(); c.moveTo(a[0][0], a[0][1]); c.lineTo(a[1][0], a[1][1]); c.lineTo(a[2][0], a[2][1]); }
+  for (const a of P.arms) { armPath(a); c.strokeStyle = 'rgba(0,0,0,.35)'; c.lineWidth = 9.5; c.stroke(); }
+  for (const a of P.arms) {
+    armPath(a); c.strokeStyle = skin; c.lineWidth = 7.4; c.stroke();
+    c.beginPath(); c.moveTo(a[1][0], a[1][1]); c.lineTo(a[2][0], a[2][1]); c.strokeStyle = skinD; c.lineWidth = 2; c.globalAlpha = .25; c.stroke(); c.globalAlpha = 1;
+    c.fillStyle = skin; c.beginPath(); c.arc(a[2][0], a[2][1], 4.3, 0, Math.PI * 2); c.fill();
+    c.strokeStyle = 'rgba(0,0,0,.3)'; c.lineWidth = 1; c.stroke();
+  }
+  // busto (maglia) con volume
+  const g = c.createRadialGradient(-2, -6, 2, -2, 0, 24);
+  g.addColorStop(0, light); g.addColorStop(0.55, main); g.addColorStop(1, dark);
+  c.fillStyle = g;
+  c.beginPath();
+  c.moveTo(-12, -14);
+  c.bezierCurveTo(-14, -24, 2, -26, 6, -20);
+  c.bezierCurveTo(10, -12, 10, 12, 6, 20);
+  c.bezierCurveTo(2, 26, -14, 24, -12, 14);
+  c.bezierCurveTo(-15, 6, -15, -6, -12, -14);
+  c.closePath(); c.fill();
+  c.strokeStyle = 'rgba(255,255,255,.9)'; c.lineWidth = 1.6; c.stroke();
+  // maniche
+  for (const s of [1, -1]) {
+    c.fillStyle = main; c.beginPath(); c.ellipse(0, 18 * s, 6, 5.2, 0, 0, Math.PI * 2); c.fill();
+    c.strokeStyle = dark; c.lineWidth = 1; c.stroke();
+  }
+  // testa: capelli + orecchie
+  const h = P.head;
+  c.fillStyle = skin;
+  c.beginPath(); c.ellipse(h[0] + 1, h[1] + 7.6, 2, 2.6, 0, 0, Math.PI * 2); c.fill();
+  c.beginPath(); c.ellipse(h[0] + 1, h[1] - 7.6, 2, 2.6, 0, 0, Math.PI * 2); c.fill();
+  c.fillStyle = skin; c.beginPath(); c.ellipse(h[0] + 2.5, h[1], 7, 7.2, 0, 0, Math.PI * 2); c.fill(); // fronte/viso
+  const hg = c.createRadialGradient(h[0] - 3, h[1] - 3, 1, h[0] - 1, h[1], 10);
+  hg.addColorStop(0, '#6b4a33'); hg.addColorStop(1, '#2a1a10');
+  c.fillStyle = hg;
+  c.beginPath(); c.ellipse(h[0] - 1, h[1], 8, 7.8, 0, 0, Math.PI * 2); c.fill();
+  c.strokeStyle = 'rgba(0,0,0,.35)'; c.lineWidth = 1; c.stroke();
+  c.restore();
+
+  // numero sulla schiena, sempre dritto
+  const label = (o.label || '').slice(0, 12);
+  const bx = x + Math.cos(ang) * -16 * k, by = y + Math.sin(ang) * -16 * k;
+  c.save(); c.textAlign = 'center'; c.textBaseline = 'middle'; c.lineJoin = 'round';
+  if (label.length && label.length <= 2) {
+    const r = 8.5 * k;
+    c.fillStyle = main; c.beginPath(); c.arc(bx, by, r, 0, Math.PI * 2); c.fill();
+    c.strokeStyle = '#fff'; c.lineWidth = Math.max(1.5, 1.6 * k); c.stroke();
+    c.font = `900 ${Math.round(11 * k)}px -apple-system, system-ui, sans-serif`;
+    c.fillStyle = o.text || '#fff'; c.fillText(label, bx, by + 0.5);
+  } else if (label.length) {
+    const fs = Math.max(11, Math.round(9 * k));
+    c.font = `700 ${fs}px -apple-system, system-ui, sans-serif`;
+    const tw = c.measureText(label).width + fs;
+    c.fillStyle = 'rgba(15,18,24,.85)';
+    c.beginPath(); c.roundRect(x - tw / 2, y + 27 * k, tw, fs * 1.45, fs * 0.72); c.fill();
+    c.fillStyle = '#fff'; c.fillText(label, x, y + 27 * k + fs * 0.75);
+  }
+  c.restore();
+}
+
 function drawToken(t, lifted) {
   const [x, y] = toScreen(t.x, t.y);
   if (t.team === 'ball') { drawBall(x, y, ballR() * (lifted ? 1.12 : 1)); return; }
   const c = TEAM[t.team] || TEAM.A;
-  const fh = figH() * (lifted ? 1.08 : 1);
-  drawPlayer(ctx, x, y + 0.45 * fh, fh, {
+  const o = {
     pose: t.pose, label: t.label, mirror: t.team === 'B',
     color: t.lib ? c.lib : c.fill, text: t.lib ? c.libText : c.text,
     textStroke: t.lib ? 'rgba(255,255,255,.6)' : 'rgba(0,0,0,.55)'
-  });
+  };
+  if (prefs.style === 'top') {
+    o.angle = topAngle(t);
+    drawPlayerTop(ctx, x, y, figW() * (lifted ? 1.08 : 1), o);
+    return;
+  }
+  const fh = figH() * (lifted ? 1.08 : 1);
+  const rot = (t.rot || 0) * Math.PI / 180;
+  if (rot) { ctx.save(); ctx.translate(x, y); ctx.rotate(rot); ctx.translate(-x, -y); }
+  drawPlayer(ctx, x, y + 0.45 * fh, fh, o);
+  if (rot) ctx.restore();
 }
+// direzione sullo schermo del giocatore visto dall'alto: Rossi verso la rete (destra), Blu verso sinistra
+function topAngle(t) { return (t.team === 'B' ? 180 : 0) + (t.rot || 0) + (vertical ? -90 : 0); }
+function figW() { return Math.max(54, Math.min(110, 1.25 * S)); }
 
 function visibleTokens() {
   return board.tokens.filter(t => t.team !== 'B' || prefs.view === 'full');
@@ -631,6 +751,7 @@ function hitToken(sx, sy, slack) {
   for (const t of ordered) {
     const [x, y] = toScreen(t.x, t.y);
     if (t.team === 'ball') { if (Math.hypot(sx - x, sy - y) <= ballR() + slack) return t; continue; }
+    if (prefs.style === 'top') { if (Math.hypot(sx - x, sy - y) <= 0.56 * figW() + slack) return t; continue; }
     const h = figH(), P = POSES[t.pose] || POSES.ready;
     const feet = y + 0.45 * h, top = feet - (1.12 + P.lift / 100) * h;
     if (Math.abs(sx - x) <= 0.3 * h + slack && sy >= top - slack && sy <= feet + 0.06 * h + slack) return t;
@@ -700,12 +821,20 @@ cv.addEventListener('pointerdown', e => {
   try { cv.setPointerCapture(e.pointerId); } catch (err) { /* non critico */ }
   const [sx, sy] = evPos(e);
   const tool = prefs.tool;
+  // secondo dito mentre un altro tiene un omino: ruota l'omino
+  const holding = [...active.values()].find(a => a.kind === 'drag' && a.token.team !== 'ball');
+  if (holding && e.pointerType === 'touch') {
+    const ang = Math.atan2(sy - holding.cur[1], sx - holding.cur[0]);
+    active.set(e.pointerId, { kind: 'twist', drag: holding, ang0: ang, rot0: holding.token.rot || 0 });
+    holding.twisted = true;
+    return;
+  }
   // Con le dita si possono sempre spostare gli omini; la Pencil disegna sopra di loro
   const canDrag = tool !== 'erase' && (tool === 'move' || e.pointerType !== 'pen');
   const tok = canDrag ? hitToken(sx, sy, e.pointerType === 'touch' ? 10 : 4) : null;
   if (tok) {
     const [wx, wy] = toWorld(sx, sy);
-    active.set(e.pointerId, { kind: 'drag', token: tok, dx: tok.x - wx, dy: tok.y - wy, sx, sy, moved: false });
+    active.set(e.pointerId, { kind: 'drag', token: tok, dx: tok.x - wx, dy: tok.y - wy, sx, sy, cur: [sx, sy], moved: false });
     requestDraw();
     return;
   }
@@ -728,7 +857,17 @@ cv.addEventListener('pointermove', e => {
   const events = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
   const last = events.length ? events[events.length - 1] : e;
   const [sx, sy] = evPos(last);
+  if (a.kind === 'twist') {
+    const h = a.drag, ang = Math.atan2(sy - h.cur[1], sx - h.cur[0]);
+    let r = a.rot0 + (ang - a.ang0) * 180 / Math.PI;
+    r = ((r + 540) % 360) - 180;
+    h.token.rot = Math.round(r);
+    a.changed = true;
+    requestDraw();
+    return;
+  }
   if (a.kind === 'drag') {
+    a.cur = [sx, sy];
     if (Math.hypot(sx - a.sx, sy - a.sy) > 4) a.moved = true;
     const [wx, wy] = toWorld(sx, sy);
     [a.token.x, a.token.y] = clampWorld(wx + a.dx, wy + a.dy);
@@ -759,12 +898,13 @@ function endPointer(e, cancelled) {
   const a = active.get(e.pointerId);
   if (!a) return;
   active.delete(e.pointerId);
+  if (a.kind === 'twist') { if (a.changed) commit(); requestDraw(); return; }
   if (a.kind === 'drag') {
     if (a.moved && a.overTrash && !cancelled) {
       board.tokens = board.tokens.filter(t => t !== a.token);
       commit(); toast('Tolto (puoi annullare)');
     } else if (a.moved) commit();
-    else if (!cancelled && a.token.team !== 'ball') {
+    else if (!cancelled && !a.twisted && a.token.team !== 'ball') {
       const now = Date.now();
       if (lastTap.id === a.token.id && now - lastTap.time < 400) { lastTap = { id: null, time: 0 }; editLabel(a.token); }
       else lastTap = { id: a.token.id, time: now };
@@ -825,7 +965,11 @@ function askText(title, value, cb) {
   mText.classList.add('open');
   setTimeout(() => { tInput.focus(); tInput.select(); }, 50);
 }
-function closeModals() { document.querySelectorAll('.modal').forEach(m => m.classList.remove('open')); tInput.blur(); }
+function closeModals() {
+  // se si chiude la finestra giocatore senza OK, la rotazione provata viene annullata
+  if (editing) { editing.rot = rotBefore; editing = null; draw(); }
+  document.querySelectorAll('.modal').forEach(m => m.classList.remove('open')); tInput.blur(); pInput.blur();
+}
 document.getElementById('tOk').onclick = () => { const cb = textCb; const v = tInput.value.trim(); closeModals(); if (cb) cb(v); };
 tInput.addEventListener('keydown', e => { if (e.key === 'Enter') document.getElementById('tOk').click(); });
 document.querySelectorAll('[data-close]').forEach(b => b.onclick = closeModals);
@@ -833,7 +977,16 @@ document.querySelectorAll('.modal').forEach(m => m.addEventListener('pointerdown
 
 // finestra giocatore: nome/numero + posa
 const mPlayer = document.getElementById('mPlayer'), pInput = document.getElementById('pInput'), posesEl = document.getElementById('poses');
-let editing = null, editPose = 'ready';
+let editing = null, editPose = 'ready', editRot = 0;
+const rotRange = document.getElementById('pRot'), rotVal = document.getElementById('pRotVal');
+function showRot() { rotRange.value = editRot; rotVal.textContent = editRot + '°'; }
+rotRange.addEventListener('input', () => { editRot = +rotRange.value; showRot(); livePreview(); });
+document.querySelectorAll('[data-rot]').forEach(b => b.onclick = () => {
+  const d = +b.dataset.rot;
+  editRot = d === 0 ? 0 : ((editRot + d + 540) % 360) - 180;
+  showRot(); livePreview();
+});
+function livePreview() { if (editing) { editing.rot = editRot; draw(); } }
 function renderPoses() {
   posesEl.innerHTML = '';
   const c = TEAM[editing.team] || TEAM.A;
@@ -842,24 +995,27 @@ function renderPoses() {
     b.className = 'pose' + (key === editPose ? ' on' : '');
     const cv2 = document.createElement('canvas'); cv2.width = 120; cv2.height = 150;
     const c2 = cv2.getContext('2d');
-    drawPlayer(c2, 60, 140, 112, { pose: key, color: editing.lib ? c.lib : c.fill, mirror: editing.team === 'B', label: '' });
+    const col = editing.lib ? c.lib : c.fill;
+    if (prefs.style === 'top') drawPlayerTop(c2, 60, 75, 84, { pose: key, color: col, angle: -90, label: '' });
+    else drawPlayer(c2, 60, 140, 112, { pose: key, color: col, mirror: editing.team === 'B', label: '' });
     const s = document.createElement('span'); s.textContent = POSES[key].name;
     b.append(cv2, s);
     b.onclick = () => { editPose = key; renderPoses(); };
     posesEl.append(b);
   }
 }
+let rotBefore = 0;
 function editLabel(t) {
-  editing = t; editPose = t.pose || 'ready';
+  editing = t; editPose = t.pose || 'ready'; editRot = rotBefore = t.rot || 0;
   pInput.value = t.label || '';
+  showRot();
   renderPoses();
   mPlayer.classList.add('open');
 }
 document.getElementById('pOk').onclick = () => {
-  if (editing) { editing.label = pInput.value.trim().slice(0, 12); editing.pose = editPose; commit(); draw(); }
+  if (editing) { editing.label = pInput.value.trim().slice(0, 12); editing.pose = editPose; editing.rot = editRot; commit(); draw(); editing = null; }
   closeModals();
-};
-pInput.addEventListener('keydown', e => { if (e.key === 'Enter') document.getElementById('pOk').click(); });
+};pInput.addEventListener('keydown', e => { if (e.key === 'Enter') document.getElementById('pOk').click(); });
 
 // ---------- Schemi salvati ----------
 function getSchemi() { return lsGet(LS_SCHEMI) || []; }
@@ -948,6 +1104,7 @@ document.getElementById('reset').onclick = () => {
   board = defaultBoard(); commit(); draw(); toast('Lavagna svuotata (puoi annullare)');
 };
 document.getElementById('view').onclick = () => { prefs.view = prefs.view === 'full' ? 'half' : 'full'; savePrefs(); updateButtons(); layout(); };
+document.getElementById('style').onclick = () => { prefs.style = prefs.style === 'top' ? 'side' : 'top'; savePrefs(); updateButtons(); draw(); };
 document.getElementById('zones').onclick = () => { prefs.zones = !prefs.zones; savePrefs(); updateButtons(); draw(); };
 
 function updateButtons() {
@@ -960,6 +1117,7 @@ function updateButtons() {
   sizesEl.querySelectorAll('.size').forEach((b, i) => b.classList.toggle('on', i === prefs.size));
   document.getElementById('view').textContent = prefs.view === 'full' ? '½ campo' : 'Intero';
   document.getElementById('zones').classList.toggle('on', prefs.zones);
+  document.getElementById('style').textContent = prefs.style === 'top' ? 'Vista: alto' : 'Vista: lato';
   document.querySelector('[data-add="B"]').disabled = prefs.view !== 'full';
   document.getElementById('undo').disabled = hIndex <= 0;
   document.getElementById('redo').disabled = hIndex >= history.length - 1;
